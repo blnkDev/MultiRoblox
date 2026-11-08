@@ -1,0 +1,14 @@
+# build output
+dist/
+*.tmp
+
+# never version account data
+accounts.dat
+favs.txt
+place.txt
+log.txt
+
+# editors
+.vs/
+*.suo
+*.user
