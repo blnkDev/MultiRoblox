@@ -23,13 +23,46 @@ using Microsoft.Win32;
 // and it is only ever sent to *.roblox.com.
 class Account
 {
-    public long Id; public string Name; public string Cookie; public string Nick = ""; public string Note = ""; public int Pid; public int PresType = -1; public string Presence = "";
+    public long Id; public string Name; public string Cookie; public string Nick = ""; public string Note = ""; public int Pid; public int PresType = -1; public string Presence = ""; public Image Avatar;   // Avatar: profile picture, never saved in accounts.dat
     public string Shown { get { return Nick.Length > 0 ? Nick : Name; } }
+}
+
+// Password lock: PBKDF2 hash with a random salt. It only gates the program window: the accounts file stays protected by Windows DPAPI.
+static class Passwords
+{
+    const int Iter = 100000;
+
+    // stored format: "1$<iterations>$<salt b64>$<hash b64>"
+    public static string Hash(string pw)
+    {
+        byte[] salt = new byte[16];
+        using (var r = new RNGCryptoServiceProvider()) r.GetBytes(salt);
+        return "1$" + Iter + "$" + Convert.ToBase64String(salt) + "$" + Convert.ToBase64String(Derive(pw, salt, Iter));
+    }
+
+    public static bool Check(string pw, string stored)
+    {
+        try
+        {
+            string[] p = stored.Split('$');
+            if (pw == null || p.Length != 4 || p[0] != "1") return false;
+            int it = int.Parse(p[1]);
+            if (it < 1000 || it > 5000000) return false;
+            byte[] want = Convert.FromBase64String(p[3]), got = Derive(pw, Convert.FromBase64String(p[2]), it);
+            int diff = want.Length ^ got.Length;
+            for (int i = 0; i < want.Length && i < got.Length; i++) diff |= want[i] ^ got[i];   // constant time
+            return diff == 0;
+        }
+        catch (Exception) { return false; }
+    }
+
+    static byte[] Derive(string pw, byte[] salt, int it) { using (var d = new Rfc2898DeriveBytes(pw, salt, it)) return d.GetBytes(32); }
 }
 
 static class Store
 {
-    static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MultiRoblox");
+    // MULTIROBLOX_DATA points the data folder somewhere else: used to test without touching real accounts.
+    static readonly string Dir = Environment.GetEnvironmentVariable("MULTIROBLOX_DATA") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "MultiRoblox");
     static readonly string FilePath = Path.Combine(Dir, "accounts.dat");
     static readonly byte[] Entropy = Encoding.UTF8.GetBytes("MultiRoblox.v1");
 
@@ -68,11 +101,26 @@ static class Store
         catch (Exception) { }
     }
 
+    public static string DataDir { get { return Dir; } }
+    public static string LogPath { get { return Path.Combine(Dir, "log.txt"); } }
+    static string LockFile { get { return Path.Combine(Dir, "lock.dat"); } }
+    public static bool HasPassword() { return File.Exists(LockFile); }
+    public static bool CheckPassword(string pw)
+    {
+        try { return Passwords.Check(pw, File.ReadAllText(LockFile).Trim()); } catch (Exception) { return false; }
+    }
+    public static void SetPassword(string pw)   // null removes the lock
+    {
+        if (ReadOnly) return;
+        try { Directory.CreateDirectory(Dir); if (pw == null) File.Delete(LockFile); else File.WriteAllText(LockFile, Passwords.Hash(pw)); }
+        catch (Exception) { }
+    }
+
     public static bool ReadOnly;   // --demo: fake data, nothing is written
 
     public static void Log(string line)
     {
-        try { Directory.CreateDirectory(Dir); File.AppendAllText(Path.Combine(Dir, "log.txt"), DateTime.Now.ToString("HH:mm:ss ") + line + Environment.NewLine); } catch (Exception) { }
+        try { Directory.CreateDirectory(Dir); if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1048576) File.Delete(LogPath); File.AppendAllText(LogPath, DateTime.Now.ToString("HH:mm:ss ") + line + Environment.NewLine); } catch (Exception) { }
     }
 
     public static List<Account> Load()
@@ -128,15 +176,23 @@ static class Roblox
         {
             using (var resp = await Http.SendAsync(Req(HttpMethod.Get, "https://users.roblox.com/v1/users/authenticated", cookie)))
             {
-                if (!resp.IsSuccessStatusCode) { Store.Log("Whoami: HTTP " + (int)resp.StatusCode); return null; }
+                if (!resp.IsSuccessStatusCode)
+                {
+                    int c = (int)resp.StatusCode;
+                    LastError = c == 401 ? "Roblox did not accept the login (HTTP 401)" : c == 403 ? "Roblox blocked the request (HTTP 403): the account may be locked" : c == 429 ? "Roblox is rate limiting you (HTTP 429): wait a minute" : "Roblox answered HTTP " + c;
+                    Store.Log("Whoami: HTTP " + c);
+                    return null;
+                }
                 var o = Obj(await resp.Content.ReadAsStringAsync());
                 return new Account { Id = Convert.ToInt64(o["id"]), Name = (string)o["name"], Cookie = cookie };
             }
         }
-        catch (Exception ex) { Store.Log("Whoami error: " + ex.Message + " | " + (ex.InnerException != null ? ex.InnerException.Message : "")); return null; }
+        catch (Exception ex) { LastError = "could not reach Roblox (" + ex.Message + ")"; Store.Log("Whoami error: " + ex.Message + " | " + (ex.InnerException != null ? ex.InnerException.Message : "")); return null; }
     }
 
-    public class GameInfo { public string Name; public long Playing; public Image Icon; }
+    public class GameInfo { public string Name; public long Playing; public Image Icon; public bool Failed; }   // Failed = could not reach Roblox (not the same as "game not found")
+    public class TicketResult { public string Ticket; public int Status; }   // Status: HTTP code, or -1 when Roblox could not be reached
+    public static string LastError = "unknown error";   // why the last login check failed, for the messages
 
     public static async Task<string> GetPublic(string url)
     {
@@ -167,7 +223,7 @@ static class Roblox
             catch (Exception) { }   // no icon: show the name only
             return info;
         }
-        catch (Exception ex) { Store.Log("Game error: " + ex.Message); return null; }
+        catch (Exception ex) { Store.Log("Game error: " + ex.Message); return new GameInfo { Failed = true }; }
     }
 
     // 1 = valid, 0 = expired (401), -1 = unknown (network / rate limit)
@@ -189,6 +245,59 @@ static class Roblox
         var set = new HashSet<int>(procs.Select(p => p.Id));
         foreach (var p in procs) p.Dispose();
         return set;
+    }
+
+    // ---- profile pictures: public thumbnails API (no cookie), cached as small PNGs in %APPDATA%\MultiRoblox\avatars ----
+    static string AvatarPath(long id) { return Path.Combine(Store.DataDir, "avatars", id + ".png"); }
+
+    static Image LoadImage(byte[] b) { using (var ms = new MemoryStream(b)) using (var img = Image.FromStream(ms)) return new Bitmap(img); }   // copy, so the stream can go away
+
+    public static Image AvatarFromCache(long id)
+    {
+        try { string p = AvatarPath(id); return File.Exists(p) ? LoadImage(File.ReadAllBytes(p)) : null; }
+        catch (Exception) { return null; }
+    }
+
+    public static TimeSpan AvatarAge(long id)
+    {
+        try { return DateTime.Now - File.GetLastWriteTime(AvatarPath(id)); } catch (Exception) { return TimeSpan.MaxValue; }
+    }
+
+    public static void DeleteAvatar(Account a)
+    {
+        var old = a.Avatar; a.Avatar = null;
+        if (old != null) old.Dispose();
+        try { if (!Store.ReadOnly && File.Exists(AvatarPath(a.Id))) File.Delete(AvatarPath(a.Id)); } catch (Exception) { }
+    }
+
+    // Only images served by Roblox's own CDN over https are ever downloaded.
+    public static bool IsRbxCdn(string url)
+    {
+        Uri u;
+        return Uri.TryCreate(url, UriKind.Absolute, out u) && u.Scheme == Uri.UriSchemeHttps && (u.Host == "rbxcdn.com" || u.Host.EndsWith(".rbxcdn.com"));
+    }
+
+    public static async Task FetchAvatars(List<Account> accts)
+    {
+        try
+        {
+            string ids = string.Join(",", accts.Select(a => a.Id.ToString()).ToArray());
+            var d = Obj(await GetPublic("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" + ids + "&size=150x150&format=Png&isCircular=true"))["data"] as object[];
+            if (d == null) return;
+            foreach (Dictionary<string, object> row in d)
+            {
+                if ((string)row["state"] != "Completed") continue;   // pending, blocked or in review: keep the letter for now
+                var a = accts.FirstOrDefault(x => x.Id == Convert.ToInt64(row["targetId"]));
+                string url = row["imageUrl"] as string;
+                if (a == null || !IsRbxCdn(url)) continue;
+                byte[] bytes = await Http.GetByteArrayAsync(url);
+                if (bytes.Length > 1000000) continue;   // a profile picture is a few KB: anything huge is not one
+                var old = a.Avatar; a.Avatar = LoadImage(bytes);
+                if (old != null) old.Dispose();
+                if (!Store.ReadOnly) { Directory.CreateDirectory(Path.GetDirectoryName(AvatarPath(a.Id))); File.WriteAllBytes(AvatarPath(a.Id), bytes); }
+            }
+        }
+        catch (Exception ex) { Store.Log("Avatar error: " + ex.Message); }
     }
 
     // POST with the CSRF handshake (403 + token on the first try). cookie may be null. Returns the body or null.
@@ -240,22 +349,47 @@ static class Roblox
     }
 
     // One-time login ticket. Roblox answers 403 + CSRF token on the first try.
-    public static async Task<string> Ticket(string cookie)
+    public static async Task<TicketResult> Ticket(string cookie)
     {
-        string csrf = null;
-        for (int i = 0; i < 2; i++)
+        var res = new TicketResult();
+        try
         {
-            var r = Req(HttpMethod.Post, "https://auth.roblox.com/v1/authentication-ticket/", cookie);
-            if (csrf != null) r.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", csrf);
-            r.Content = new StringContent("", Encoding.UTF8, "application/json");
-            using (var resp = await Http.SendAsync(r))
+            string csrf = null;
+            for (int i = 0; i < 2; i++)
             {
-                IEnumerable<string> v;
-                if (resp.Headers.TryGetValues("rbx-authentication-ticket", out v)) return v.First();
-                if (resp.Headers.TryGetValues("x-csrf-token", out v)) csrf = v.First(); else { Store.Log("Ticket: HTTP " + (int)resp.StatusCode); return null; }
+                var r = Req(HttpMethod.Post, "https://auth.roblox.com/v1/authentication-ticket/", cookie);
+                if (csrf != null) r.Headers.TryAddWithoutValidation("X-CSRF-TOKEN", csrf);
+                r.Content = new StringContent("", Encoding.UTF8, "application/json");
+                using (var resp = await Http.SendAsync(r))
+                {
+                    IEnumerable<string> v;
+                    if (resp.Headers.TryGetValues("rbx-authentication-ticket", out v)) { res.Ticket = v.First(); return res; }
+                    res.Status = (int)resp.StatusCode;
+                    if (i == 0 && resp.Headers.TryGetValues("x-csrf-token", out v)) { csrf = v.First(); continue; }
+                    break;
+                }
             }
         }
-        return null;
+        catch (Exception ex) { res.Status = -1; Store.Log("Ticket error: " + ex.Message); }
+        Store.Log("Ticket: HTTP " + res.Status);
+        return res;
+    }
+
+    // Closes the Roblox client with this process id, but only if it is still a process with the expected name
+    // (a process id can be reused by another program after the client exits). Returns true if a client was closed.
+    public static bool CloseClient(int pid, string expectedName)
+    {
+        try
+        {
+            using (var p = Process.GetProcessById(pid))
+            {
+                if (!p.ProcessName.Equals(expectedName, StringComparison.OrdinalIgnoreCase)) return false;
+                try { p.CloseMainWindow(); } catch (Exception) { }
+                if (!p.WaitForExit(2500)) { p.Kill(); p.WaitForExit(3000); }
+                return true;
+            }
+        }
+        catch (Exception) { return false; }   // already gone
     }
 
     static string UrlEncode(string s)
@@ -415,7 +549,7 @@ static class Roblox
                     if (cookie != null)
                     {
                         if ((found = await Whoami(cookie)) != null) break;
-                        if (++fails >= 5) { say("Could not validate the login with Roblox (see log.txt)."); break; }
+                        if (++fails >= 5) { say("Could not validate the login: " + LastError + ". See Open log."); break; }
                     }
                     await Task.Delay(1500, ct);
                 }
@@ -553,6 +687,7 @@ static class Native
     [DllImport("user32.dll")] public static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO mi);
     [DllImport("user32.dll")] public static extern bool AdjustWindowRectEx(ref RECT r, int style, bool menu, int exStyle);
     [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr h, ref MARGINS m);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
     [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int attr, ref int v, int size);
 
     // screen x/y coordinates from lParam (each signed: a monitor to the left has negative x)
@@ -668,7 +803,9 @@ class MainForm : Form
     readonly TitleBar bar = new TitleBar();
     readonly EdgePanel body = new EdgePanel();
     CaptionButton btnMin, btnMax, btnClose;
-    Button btnUpdate;
+    Button btnUpdate, btnLog;
+    TextBox editBox;   // inline nickname editor, shown over the account row
+    Account editing;
     string updateUrl;
     const string UpdateApiDefault = "https://api.github.com/repos/blnkDev/MultiRoblox/releases/latest";
     static string UpdateApi = UpdateApiDefault;
@@ -703,9 +840,10 @@ class MainForm : Form
         bool first;
         using (new Mutex(true, "MultiRoblox_SingleInstance", out first))
         {
-            if (!first) { MessageBox.Show("MultiRoblox is already running (check the system tray).", "MultiRoblox"); return 0; }
+            if (!first) { MessageBox.Show("MultiRoblox is already running (look for it in the taskbar or the system tray).", "MultiRoblox"); return 0; }
             System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;   // TLS 1.2: Roblox rejects the .NET 4 default
             Application.EnableVisualStyles();
+            if (!Demo && !Unlock()) return 0;   // password lock (optional)
             Application.Run(new MainForm());
         }
         return 0;
@@ -724,6 +862,17 @@ class MainForm : Form
         var cur = new Version(1, 0, 0, 0);
         if (!IsNewer("v1.1.0", cur) || !IsNewer("1.0.1", cur) || !IsNewer("v2.0.0", cur)) return 10;
         if (IsNewer("v1.0.0", cur) || IsNewer("v0.9.9", cur) || IsNewer("v1.0.0-beta", cur) || IsNewer(null, cur) || IsNewer("latest", cur)) return 11;
+        string ph = Passwords.Hash("secret1");
+        if (!Passwords.Check("secret1", ph) || Passwords.Check("Secret1", ph) || Passwords.Check("", ph) || Passwords.Check("secret1", "garbage") || Passwords.Check("secret1", null)) return 12;
+        var ping = Process.Start(new ProcessStartInfo("ping.exe", "-n 30 127.0.0.1") { CreateNoWindow = true, UseShellExecute = false });   // a harmless stand-in for a Roblox client
+        try
+        {
+            if (Roblox.CloseClient(ping.Id, "RobloxPlayerBeta") || ping.HasExited) return 13;   // wrong name: must be left alone
+            if (!Roblox.CloseClient(ping.Id, "PING") || !ping.WaitForExit(3000)) return 14;   // right name: closed
+        }
+        finally { try { if (!ping.HasExited) ping.Kill(); } catch (Exception) { } }
+        if (!Roblox.IsRbxCdn("https://tr.rbxcdn.com/abc/150/150/x/Png") || Roblox.IsRbxCdn("http://tr.rbxcdn.com/a") || Roblox.IsRbxCdn("https://tr.rbxcdn.com.evil.com/a")
+            || Roblox.IsRbxCdn("https://evil.com/tr.rbxcdn.com") || Roblox.IsRbxCdn("not a url") || Roblox.IsRbxCdn(null)) return 15;
         var area = new Rectangle(0, 40, 1920, 1000);
         for (int n = 1; n <= 9; n++)
         {
@@ -927,7 +1076,12 @@ class MainForm : Form
         btnPres = MakeButton("\u21BB Status", Card); btnPres.SetBounds(440, 14, 100, 28); btnPres.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         foreach (var b in new[] { btnAdd, btnNick, btnRemove, btnTile, btnFollow }) b.Anchor = BL;
         btnPlay.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        msg.SetBounds(20, 506, 520, 20); msg.ForeColor = Muted; msg.Anchor = BL;
+        msg.SetBounds(20, 506, 430, 20); msg.ForeColor = Muted; msg.Anchor = BL;
+        btnLog = new Button { Text = "Open log", FlatStyle = FlatStyle.Flat, ForeColor = Muted, BackColor = Bg, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 8.5f), TextAlign = ContentAlignment.MiddleRight };
+        btnLog.FlatAppearance.BorderSize = 0; btnLog.FlatAppearance.MouseOverBackColor = Bg; btnLog.FlatAppearance.MouseDownBackColor = Bg;
+        btnLog.SetBounds(458, 505, 82, 22); btnLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        btnLog.MouseEnter += delegate { btnLog.ForeColor = Color.White; }; btnLog.MouseLeave += delegate { btnLog.ForeColor = Muted; };
+        btnLog.Click += delegate { OpenLog(); };
 
         bar.SetBounds(1, 1, 560, 36); bar.BackColor = Color.FromArgb(24, 24, 30); bar.Logo = Logo(16);
         bar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
@@ -945,11 +1099,27 @@ class MainForm : Form
         body.SetBounds(1, 37, 560, 540); body.BackColor = Bg; body.ForeColor = Color.White; body.Font = Font;
         body.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         Controls.Add(body); Controls.Add(bar);
-        body.Controls.AddRange(new Control[] { pill, clients, btnPres, list, icon, gameName, gameSub, lbl, place, btnStar, favBox, btnAdd, btnNick, btnRemove, btnTile, btnFollow, btnPlay, msg });
+        body.Controls.AddRange(new Control[] { pill, clients, btnPres, list, icon, gameName, gameSub, lbl, place, btnStar, favBox, btnAdd, btnNick, btnRemove, btnTile, btnFollow, btnPlay, msg, btnLog });
+        editBox = new TextBox { Visible = false, MaxLength = 24, BorderStyle = BorderStyle.FixedSingle, BackColor = Bg, ForeColor = Color.White, Font = FName };
+        editBox.KeyDown += delegate(object o, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; EndEdit(true, true); }
+            else if (e.KeyCode == Keys.Escape) { e.SuppressKeyPress = true; EndEdit(false, true); }
+        };
+        editBox.Leave += delegate { EndEdit(true, false); };   // clicking anywhere else saves too
+        body.Controls.Add(editBox); editBox.BringToFront();
         btnAdd.Click += delegate { AddAccount(); };
         btnRemove.Click += delegate { RemoveSelected(); };
         btnNick.Click += delegate { RenameSelected(); };
-        list.DoubleClick += delegate { RenameSelected(); };
+        var ctx = new ContextMenu();
+        ctx.MenuItems.Add("Play", delegate { PlaySelected(); });
+        var miClose = new MenuItem("Close client"); miClose.Click += delegate { CloseSelectedClients(); };
+        ctx.MenuItems.Add(miClose);
+        ctx.MenuItems.Add("-");
+        ctx.MenuItems.Add("Nickname...", delegate { RenameSelected(); });
+        ctx.MenuItems.Add("Remove", delegate { RemoveSelected(); });
+        ctx.Popup += delegate { miClose.Enabled = list.SelectedItems.Cast<Account>().Any(a => a.Pid != 0); };   // only clients opened by MultiRoblox can be closed
+        list.ContextMenu = ctx;
         lookup.Interval = 600; lookup.Tick += delegate { lookup.Stop(); LookupGame(); };   // wait until typing stops
         place.TextChanged += delegate { lookup.Stop(); lookup.Start(); SyncFavUi(); };
         btnPlay.Click += delegate { PlaySelected(); };
@@ -963,17 +1133,31 @@ class MainForm : Form
         tray.DoubleClick += delegate { Restore(); };
         var menu = new ContextMenu();
         menu.MenuItems.Add("Show", delegate { Restore(); });
+        var miLock = new MenuItem("Lock now");   // hides the window to the tray; showing it again asks for the password
+        miLock.Click += delegate { Hide(); };
+        menu.MenuItems.Add(miLock);
         menu.MenuItems.Add("Check for updates now", delegate { CheckUpdate(true); });
         var autoCheck = new MenuItem("Check for updates automatically") { Checked = Store.UpdateCheckOn() };
         autoCheck.Click += delegate { autoCheck.Checked = !autoCheck.Checked; Store.SetUpdateCheck(autoCheck.Checked); };
         menu.MenuItems.Add(autoCheck);
+        menu.MenuItems.Add("-");
+        menu.MenuItems.Add("Open log", delegate { OpenLog(); });
+        menu.MenuItems.Add("Open data folder", delegate { try { Process.Start(new ProcessStartInfo(Store.DataDir) { UseShellExecute = true }); } catch (Exception) { } });
+        var miPw = new MenuItem("Set password...");
+        var miPwOff = new MenuItem("Remove password");
+        miPw.Click += delegate { SetPasswordFlow(); };
+        miPwOff.Click += delegate { RemovePasswordFlow(); };
+        menu.MenuItems.Add(miPw);
+        menu.MenuItems.Add(miPwOff);
+        menu.Popup += delegate { miPw.Text = Store.HasPassword() ? "Change password..." : "Set password..."; miPwOff.Visible = Store.HasPassword(); miLock.Visible = Store.HasPassword(); };
+        menu.MenuItems.Add("-");
         menu.MenuItems.Add("Exit", delegate { Close(); });
         tray.ContextMenu = menu;
 
         var fr = new Native.RECT();
         Native.AdjustWindowRectEx(ref fr, CreateParams.Style, false, CreateParams.ExStyle);
         frameExtra = new Size(fr.Right - fr.Left, fr.Bottom - fr.Top);
-        Resize += delegate { FixRestoredSize(); btnMax.Maxed = WindowState == FormWindowState.Maximized; btnMax.Invalidate(); if (WindowState == FormWindowState.Minimized) Hide(); };
+        Resize += delegate { FixRestoredSize(); btnMax.Maxed = WindowState == FormWindowState.Maximized; btnMax.Invalidate(); };
         FormClosed += delegate
         {
             tray.Visible = false; timer.Stop(); if (cts != null) cts.Cancel();
@@ -984,11 +1168,12 @@ class MainForm : Form
         RefreshList();
         timer.Interval = 1000; timer.Tick += delegate { Tick(); }; timer.Start();
         Tick();
-        Say(accounts.Count == 0 ? "Click \"+ Add account\" to get started." : "Double-click: nickname.  Drag or Alt+Up/Down: reorder.");
+        if (accounts.Count == 0) Say("Click \"+ Add account\" to get started.");
         LookupGame();
         SyncFavUi();
         if (!Demo) ValidateAll();   // demo: no network to validate fake accounts
-        var upd = new System.Windows.Forms.Timer { Interval = 6 * 60 * 60 * 1000 };   // long-running tray app: look again every 6 hours
+        if (!Demo) LoadAvatars();
+        var upd = new System.Windows.Forms.Timer { Interval = 6 * 60 * 60 * 1000 };   // long-running app: look again every 6 hours
         upd.Tick += delegate { if (Store.UpdateCheckOn() && !btnUpdate.Visible) CheckUpdate(false); };
         upd.Start();
         if ((!Demo || UpdateApi != UpdateApiDefault) && Store.UpdateCheckOn()) CheckUpdate(false);
@@ -1035,7 +1220,7 @@ class MainForm : Form
         RefreshPresence();
     }
 
-    void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
+    void Restore() { if (!Visible && Store.HasPassword() && !Unlock()) return; Show(); WindowState = FormWindowState.Normal; Activate(); }   // a hidden window (only "Lock now" hides it) means locked
     void Say(string s, bool bad = false) { msg.Text = s; msg.ForeColor = bad ? Red : Muted; }
 
     // Moves the item at 'from' so it ends up before the item that was at insertion index 'to' (0..Count).
@@ -1065,6 +1250,12 @@ class MainForm : Form
 
     void ListMouseDown(object o, MouseEventArgs e)
     {
+        if (e.Button == MouseButtons.Left && e.Clicks == 2 && list.IndexFromPoint(e.Location) >= 0) { RenameSelected(); return; }   // double-click on an account = edit its nickname in place
+        if (e.Button == MouseButtons.Right)   // right-click targets the account under the pointer unless it is already part of the selection
+        {
+            int under = list.IndexFromPoint(e.Location);
+            if (under >= 0 && !list.GetSelected(under)) { list.ClearSelected(); list.SetSelected(under, true); }
+        }
         dragIndex = e.Button == MouseButtons.Left && (ModifierKeys & (Keys.Control | Keys.Shift)) == 0 ? list.IndexFromPoint(e.Location) : -1;
         dragStart = e.Location;
     }
@@ -1129,9 +1320,21 @@ class MainForm : Form
         using (var bg = new SolidBrush(Bg)) g.FillRectangle(bg, e.Bounds);
         var row = new Rectangle(e.Bounds.X, e.Bounds.Y + 3, e.Bounds.Width - 2, e.Bounds.Height - 6);
         using (var p = RoundRect(row, 10)) using (var br = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? CardSel : Card)) g.FillPath(br, p);
-        var dot = new Rectangle(row.X + 10, row.Y + 8, 32, 32);
-        using (var br = new SolidBrush(Accent)) g.FillEllipse(br, dot);
-        TextRenderer.DrawText(g, a.Shown.Substring(0, 1).ToUpper(), FAvatar, dot, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        var dot = new Rectangle(row.X + 10, row.Y + 6, 36, 36);
+        if (a.Avatar != null) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(a.Avatar, dot); }
+        else
+        {
+            using (var br = new SolidBrush(Accent)) g.FillEllipse(br, dot);
+            TextRenderer.DrawText(g, a.Shown.Substring(0, 1).ToUpper(), FAvatar, dot, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+        }
+        // status dot on the avatar: green = in game, blue = online, orange = Studio, gray = offline, none = not checked yet
+        Color sc = a.PresType == 2 ? Green : a.PresType == 1 ? Accent : a.PresType == 3 ? Orange : a.PresType == 0 ? Color.FromArgb(110, 110, 125) : Color.Empty;
+        if (!sc.IsEmpty)
+        {
+            var sd = new Rectangle(dot.Right - 10, dot.Bottom - 10, 12, 12);
+            using (var ring = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? CardSel : Card)) g.FillEllipse(ring, sd.X - 2, sd.Y - 2, sd.Width + 4, sd.Height + 4);   // ring in the row color separates the dot from the picture
+            using (var db = new SolidBrush(sc)) g.FillEllipse(db, sd);
+        }
         TextRenderer.DrawText(g, a.Shown, FName, new Point(row.X + 52, row.Y + 6), Color.White);
         TextRenderer.DrawText(g, (a.Nick.Length > 0 ? a.Name + "  \u00B7  " : "") + "ID " + a.Id, FSub, new Point(row.X + 52, row.Y + 27), Muted);
         var right = new Rectangle(row.X + 200, row.Y + 6, row.Width - 210, 20);
@@ -1192,6 +1395,7 @@ class MainForm : Form
             accounts.Add(a);
             Store.Save(accounts);
             RefreshList();
+            LoadAvatars();
             Say("Account " + a.Name + " added.");
         }
         catch (Exception ex) { Store.Log("AddAccount error: " + ex); Say("Error: " + ex.Message, true); }
@@ -1206,6 +1410,7 @@ class MainForm : Form
         SetGame(null, "Looking up game...");
         Roblox.GameInfo g = await Roblox.Game(id);
         if (ver != lookupVer) return;   // a stale reply for an old ID is discarded
+        if (g != null && g.Failed) { SetGame(null, "Could not reach Roblox - check your connection"); lastGameId = 0; lastGameName = ""; return; }
         SetGame(g, "Game not found - check the ID");
         lastGameId = g != null ? id : 0; lastGameName = g != null ? Clean(g.Name) : "";
     }
@@ -1229,31 +1434,39 @@ class MainForm : Form
         return r.Length > 0 ? r : s;
     }
 
-    static string Ask(string title, string label, string current)
-    {
-        using (var f = new Form { Text = title, ClientSize = new Size(340, 120), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
-            MaximizeBox = false, MinimizeBox = false, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f) })
-        {
-            DarkTitle(f);
-            var l = new Label { Text = label, AutoSize = true, Location = new Point(16, 14), ForeColor = Muted };
-            var t = new TextBox { Text = current, MaxLength = 24, Location = new Point(16, 40), Width = 308, BackColor = Card, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
-            var ok = MakeButton("Save", Accent); ok.SetBounds(224, 74, 100, 32); ok.DialogResult = DialogResult.OK;
-            f.Controls.AddRange(new Control[] { l, t, ok });
-            f.AcceptButton = ok;
-            return f.ShowDialog() == DialogResult.OK ? t.Text.Trim() : null;
-        }
-    }
-
+    // Nickname editing happens right on the account row: Enter or clicking away saves, Esc cancels.
     void RenameSelected()
     {
         var a = list.SelectedItems.Cast<Account>().FirstOrDefault();
         if (a == null) { Say("Select an account to set a nickname.", true); return; }
-        string n = Ask("Nickname", "Nickname for " + a.Name + " (empty = use the Roblox name)", a.Nick);
-        if (n == null) return;
-        a.Nick = n.Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');   // the file uses tab/newline as separators
-        Store.Save(accounts);
+        BeginEdit(a);
+    }
+
+    void BeginEdit(Account a)
+    {
+        int i = accounts.IndexOf(a);
+        if (i < 0) return;
+        int visible = Math.Max(1, list.ClientSize.Height / list.ItemHeight);
+        if (i < list.TopIndex) list.TopIndex = i; else if (i >= list.TopIndex + visible) list.TopIndex = i - visible + 1;   // make sure the row is on screen
+        var r = list.GetItemRectangle(i);
+        editing = a;
+        editBox.Text = a.Nick;
+        editBox.Width = 250;
+        editBox.Location = new Point(list.Left + r.X + 49, list.Top + r.Y + 18 - editBox.Height / 2);   // right over the name
+        editBox.Visible = true; editBox.BringToFront();
+        Native.SendMessage(editBox.Handle, 0x1501, (IntPtr)1, "Nickname");   // EM_SETCUEBANNER: hint shown while it is empty
+        editBox.Focus(); editBox.SelectAll();
+    }
+
+    void EndEdit(bool commit, bool refocusList)
+    {
+        if (editing == null) return;   // also stops the Leave event fired by hiding the box
+        var a = editing; editing = null;
+        string n = editBox.Text.Trim().Replace('\t', ' ').Replace('\r', ' ').Replace('\n', ' ');   // the file uses tab/newline as separators
+        editBox.Visible = false;
+        if (commit && n != a.Nick) { a.Nick = n; Store.Save(accounts); }
         list.Invalidate();
-        Say(a.Nick.Length > 0 ? "Nickname saved." : "Nickname removed.");
+        if (refocusList) list.Focus();
     }
 
     void RemoveSelected()
@@ -1261,6 +1474,7 @@ class MainForm : Form
         var sel = list.SelectedItems.Cast<Account>().ToList();
         if (sel.Count == 0) return;
         if (MessageBox.Show("Remove " + sel.Count + " account(s) from this program? (the Roblox account is not affected)", "MultiRoblox", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+        foreach (var gone in sel) Roblox.DeleteAvatar(gone);   // also removes the cached picture
         accounts.RemoveAll(sel.Contains);
         Store.Save(accounts);
         RefreshList();
@@ -1325,10 +1539,12 @@ class MainForm : Form
             {
                 var a = sel[i];
                 a.Note = "opening..."; list.Invalidate();
-                string ticket = await Roblox.Ticket(a.Cookie);
-                if (ticket == null) { a.Note = "! login expired - add it again"; list.Invalidate(); continue; }
+                var tk = await Roblox.Ticket(a.Cookie);
+                if (tk.Ticket == null) { a.Note = TicketNote(tk); Store.Log("no login ticket for " + a.Name + ": " + a.Note); list.Invalidate(); continue; }
+                string ticket = tk.Ticket;
                 var before = Roblox.ClientPids();
-                Roblox.Launch(ticket, placeId, followId);
+                try { Roblox.Launch(ticket, placeId, followId); }
+                catch (Exception ex) { a.Note = "! could not start Roblox"; Store.Log("could not start Roblox for " + a.Name + ": " + ex.Message); list.Invalidate(); continue; }
                 Store.Log("launch sent to " + a.Name + (followId > 0 ? " following " + followId : " place " + placeId));
                 int pid = 0;
                 for (int w = 0; w < 90 && pid == 0; w++)   // wait up to ~45 s for the client to appear
@@ -1340,10 +1556,120 @@ class MainForm : Form
                 a.Pid = pid; a.Note = "open"; opened++; list.Invalidate();
                 if (i < sel.Count - 1) await Task.Delay(4000);   // gap between clients: avoids Roblox's rate limit
             }
-            Say(opened == sel.Count ? "Done." : "Opened " + opened + " of " + sel.Count + " (see the accounts in red).", opened != sel.Count);
+            Say(opened == sel.Count ? "Done." : "Opened " + opened + " of " + sel.Count + ". Click Open log for the red ones.", opened != sel.Count);
         }
         catch (Exception ex) { Store.Log("Launch error: " + ex); Say("Error: " + ex.Message, true); }
         finally { SetBusy(false); }
+    }
+
+    static string TicketNote(Roblox.TicketResult t)
+    {
+        switch (t.Status)
+        {
+            case 401: return "! login expired - add it again";
+            case 403: return "! locked or restricted (HTTP 403)";
+            case 429: return "! rate limited - wait a minute";
+            case -1: return "! could not reach Roblox";
+            default: return "! Roblox error (HTTP " + t.Status + ")";
+        }
+    }
+
+    void OpenLog()
+    {
+        try
+        {
+            if (!File.Exists(Store.LogPath)) { Say("There is no log yet: nothing has gone wrong so far."); return; }
+            Process.Start(new ProcessStartInfo(Store.LogPath) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Say("Could not open the log: " + ex.Message, true); }
+    }
+
+    // Closes the Roblox clients that MultiRoblox opened for the selected accounts.
+    async void CloseSelectedClients()
+    {
+        var sel = list.SelectedItems.Cast<Account>().Where(a => a.Pid != 0).ToList();
+        if (sel.Count == 0) { Say("MultiRoblox has no open client for the selected account(s).", true); return; }
+        int closed = 0;
+        foreach (var a in sel)
+        {
+            int pid = a.Pid;
+            if (await Task.Run(() => Roblox.CloseClient(pid, "RobloxPlayerBeta"))) closed++;
+            a.Pid = 0; if (a.Note == "open") a.Note = "";
+        }
+        list.Invalidate();
+        Say("Closed " + closed + " client(s).");
+    }
+
+    // ---- password lock ----
+    // Returns the typed password, or null if cancelled. confirm = type it twice (new password).
+    static string AskPassword(string title, string label, bool confirm, string error = null)
+    {
+        using (var f = new Form { Text = title, ClientSize = new Size(340, confirm ? 228 : 160), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen,
+            MaximizeBox = false, MinimizeBox = false, TopMost = true, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f), Icon = Icon.FromHandle(Logo(32).GetHicon()) })
+        {
+            DarkTitle(f);
+            var l = new Label { Text = label, Size = new Size(308, confirm ? 72 : 36), Location = new Point(16, 12), ForeColor = Muted };
+            var t1 = new TextBox { Location = new Point(16, confirm ? 90 : 54), Width = 308, UseSystemPasswordChar = true, BackColor = Card, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            TextBox t2 = null;
+            if (confirm) t2 = new TextBox { Location = new Point(16, 122), Width = 308, UseSystemPasswordChar = true, BackColor = Card, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            int y = confirm ? 154 : 86;
+            var err = new Label { Text = error ?? (confirm ? "Type it twice. At least 4 characters." : ""), Size = new Size(308, 20), Location = new Point(16, y), ForeColor = error != null ? Red : Muted };
+            var ok = MakeButton("OK", Accent); ok.SetBounds(224, y + 28, 100, 32);
+            var cancel = MakeButton("Cancel", Card); cancel.SetBounds(116, y + 28, 100, 32); cancel.DialogResult = DialogResult.Cancel;
+            ok.Click += delegate
+            {
+                if (t1.Text.Length == 0) return;
+                if (confirm && t1.Text.Length < 4) { err.Text = "Use at least 4 characters."; err.ForeColor = Red; return; }
+                if (confirm && t1.Text != t2.Text) { err.Text = "The two passwords do not match."; err.ForeColor = Red; return; }
+                f.DialogResult = DialogResult.OK;
+            };
+            f.Controls.AddRange(confirm ? new Control[] { l, t1, t2, err, cancel, ok } : new Control[] { l, t1, err, cancel, ok });
+            f.AcceptButton = ok; f.CancelButton = cancel;
+            f.Shown += delegate { f.Activate(); t1.Focus(); };
+            return f.ShowDialog() == DialogResult.OK ? t1.Text : null;
+        }
+    }
+
+    // Asks until the password is right or the user cancels. Used when the program opens and when a locked window is brought back from the tray.
+    static bool Unlock()
+    {
+        if (!Store.HasPassword()) return true;
+        string error = null;
+        for (;;)
+        {
+            string pw = AskPassword("MultiRoblox is locked", "Enter your password to open MultiRoblox.", false, error);
+            if (pw == null) return false;
+            if (Store.CheckPassword(pw)) return true;
+            error = "Wrong password.";
+            Thread.Sleep(600);   // slows down guessing
+        }
+    }
+
+    void SetPasswordFlow()
+    {
+        if (Demo) return;
+        bool had = Store.HasPassword();
+        if (had && !CheckCurrentPassword()) return;
+        string pw = AskPassword(had ? "Change password" : "Set password", "New password. MultiRoblox will ask for it when it opens. This only locks the program: it does not encrypt your accounts any further.", true);
+        if (pw == null) return;
+        Store.SetPassword(pw);
+        Say("Password saved. MultiRoblox will ask for it next time.");
+    }
+
+    void RemovePasswordFlow()
+    {
+        if (!CheckCurrentPassword()) return;
+        Store.SetPassword(null);
+        Say("Password removed.");
+    }
+
+    bool CheckCurrentPassword()
+    {
+        string pw = AskPassword("Confirm password", "Enter your current password.", false);
+        if (pw == null) return false;
+        if (Store.CheckPassword(pw)) return true;
+        Say("Wrong password.", true);
+        return false;
     }
 
     // ---- favorites ----
@@ -1394,6 +1720,20 @@ class MainForm : Form
             }
         }
         finally { if (!IsDisposed) btnPres.Enabled = true; }
+    }
+
+    // Profile pictures: cached copies first (instant), then a refresh of the missing or older-than-12-hours ones.
+    async void LoadAvatars()
+    {
+        foreach (var a in accounts.ToList()) if (a.Avatar == null) a.Avatar = Roblox.AvatarFromCache(a.Id);
+        list.Invalidate();
+        var stale = accounts.Where(a => a.Avatar == null || Roblox.AvatarAge(a.Id) > TimeSpan.FromHours(12)).ToList();
+        for (int i = 0; i < stale.Count; i += 50)   // the API takes many ids per request
+        {
+            await Roblox.FetchAvatars(stale.Skip(i).Take(50).ToList());
+            if (IsDisposed) return;
+            list.Invalidate();
+        }
     }
 
     void TileClick()
