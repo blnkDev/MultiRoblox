@@ -6,7 +6,7 @@
 
 **A lightweight, dark-themed multi-client launcher and account manager for Roblox. No installer needed.**
 
-[![Release](https://img.shields.io/github/v/release/blnkDev/MultiRoblox?style=flat-square&color=6366f1)](https://github.com/blnkDev/MultiRoblox/releases/latest)
+[![Release](https://img.shields.io/github/v/release/blnkDev/MultiRoblox?style=flat-square&color=6366f1)](https://github.com/blnkDev/MultiRoblox/releases/tag/Releases)
 [![Build](https://img.shields.io/github/actions/workflow/status/blnkDev/MultiRoblox/release.yml?style=flat-square)](https://github.com/blnkDev/MultiRoblox/actions)
 [![License](https://img.shields.io/badge/license-MIT-6366f1?style=flat-square)](LICENSE)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078d4?style=flat-square)
