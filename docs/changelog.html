@@ -52,7 +52,27 @@
     <div class="wrap">
       <div data-releases>
     <div class="release">
-      <div class="release-head"><h2>v1.1.0</h2><span class="chip on">Latest</span><span class="release-date">Nov 9, 2026</span></div>
+      <div class="release-head"><h2>v1.2.0</h2><span class="chip on">Latest</span><span class="release-date">Nov 9, 2026</span></div>
+      <div class="panel notes">
+        <h4>Added</h4>
+        <ul>
+          <li>Profile pictures: each account shows its Roblox avatar (public thumbnail, cached in <code>avatars\</code> and refreshed every 12 hours; removing an account deletes its picture), with a status dot on it: green in game, blue online, orange in Studio, gray offline. The colored initial stays as the fallback.</li>
+          <li>Optional password lock: MultiRoblox asks for the password when it opens. Set, change or remove it from the tray icon menu, where <strong>Lock now</strong> hides the window until the password is typed again. It only locks the window; accounts stay protected by Windows DPAPI.</li>
+          <li><strong>Open log</strong> button (and tray menu entries for the log and the data folder).</li>
+          <li>Right-click menu on accounts with <strong>Close client</strong>, which closes just that account's Roblox client (only clients opened by MultiRoblox).</li>
+          <li>Clearer errors: each account now says why launching failed (expired login, rate limit, locked or restricted account, no connection), and a failed game lookup tells a connection problem apart from a wrong Place ID.</li>
+          <li><code>MULTIROBLOX_DATA</code> environment variable to use another data folder (for testing).</li>
+        </ul>
+        <h4>Changed</h4>
+        <ul>
+          <li>Minimizing now keeps the window in the taskbar like any other app, instead of hiding it in the system tray. The tray icon stays for its menu.</li>
+          <li>Nicknames are now edited in place, right on the account row (Enter or clicking away saves, Esc cancels), instead of in a separate window.</li>
+          <li>The hint text under the account list was removed.</li>
+          <li><code>log.txt</code> is trimmed automatically when it grows past 1 MB.</li>
+        </ul>
+      </div>
+    </div>    <div class="release">
+      <div class="release-head"><h2>v1.1.0</h2><span class="release-date">Nov 9, 2026</span></div>
       <div class="panel notes">
         <h4>Added</h4>
         <ul>

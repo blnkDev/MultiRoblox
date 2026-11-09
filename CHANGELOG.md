@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.2.0] - 2026-11-09
 
 ### Added
 - Profile pictures: each account shows its Roblox avatar (public thumbnail, cached in `avatars\` and refreshed every 12 hours; removing an account deletes its picture), with a status dot on it: green in game, blue online, orange in Studio, gray offline. The colored initial stays as the fallback.
@@ -44,5 +44,6 @@ First public release.
 - Dark UI with custom title bar, custom icon and system tray.
 - Development options: `--demo`, `--selftest`, `--logintest`, `--makeico`.
 
+[1.2.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.2.0
 [1.1.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.1.0
 [1.0.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.0.0
