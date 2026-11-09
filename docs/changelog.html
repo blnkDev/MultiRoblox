@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changelog - MultiRoblox</title>
+<meta name="description" content="Every MultiRoblox release, newest first: what was added, changed and fixed.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/changelog.html">
+<meta property="og:title" content="Changelog">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="guide.html">Guide</a>
+      <a href="security.html">Security</a>
+      <a href="help.html">Help</a>
+      <a href="changelog.html" aria-current="page">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-head">
+    <div class="wrap">
+      <h1>Changelog</h1>
+      <p>Every release of MultiRoblox, newest first.</p>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="wrap">
+      <div data-releases>
+    <div class="release">
+      <div class="release-head"><h2>v1.1.0</h2><span class="chip on">Latest</span><span class="release-date">Nov 9, 2026</span></div>
+      <div class="panel notes">
+        <h4>Added</h4>
+        <ul>
+          <li>Reorder accounts by dragging them, or with <code>Alt</code>+<code>Up</code>/<code>Down</code> (moves all selected). The order is saved.</li>
+          <li>Update notice: checks the latest GitHub release on startup and every 6 hours and shows an <strong>Update</strong> button in the title bar. Tray menu: "Check for updates now" and "Check for updates automatically" (on by default). Nothing is downloaded or installed automatically.</li>
+        </ul>
+        <h4>Fixed</h4>
+        <ul>
+          <li>The window no longer shows a classic Windows title bar over the custom one when it loses focus.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="release">
+      <div class="release-head"><h2>v1.0.0</h2><span class="release-date">Nov 8, 2026</span></div>
+      <div class="panel notes">
+        <p>First public release.</p>
+        <h4>Added</h4>
+        <ul>
+          <li>Multi-client: holds <code>ROBLOX_singletonMutex</code> and <code>ROBLOX_singletonEvent</code> so several Roblox clients can run at once.</li>
+          <li>Account manager with sign-in through the default browser (Firefox, Edge, Chrome, Brave, Vivaldi), no stored passwords; cookie encrypted with DPAPI.</li>
+          <li>Per-account nicknames.</li>
+          <li>Launch several accounts at once, confirming that each client started.</li>
+          <li>Game by Place ID with name, icon and live player count; favorite games; last game remembered.</li>
+          <li>Follow user (a friend or one of your other accounts).</li>
+          <li>Online status for each account.</li>
+          <li>Tile the Roblox windows in a grid.</li>
+          <li>Login validation of the accounts on startup.</li>
+          <li>Dark UI with custom title bar, custom icon and system tray.</li>
+        </ul>
+      </div>
+    </div>
+      </div>
+      <p class="fine" style="margin-top:32px">Downloads and the full history are on <a href="https://github.com/blnkDev/MultiRoblox/releases">GitHub Releases</a>.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>

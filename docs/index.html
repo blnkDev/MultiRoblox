@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MultiRoblox - multi-client launcher and account manager for Roblox</title>
+<meta name="description" content="A lightweight multi-client launcher and account manager for Roblox. Sign in through your default browser (no stored passwords), launch many accounts at once, tile windows, favorites and online status. Windows, free and open source.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="MultiRoblox">
+<meta property="og:description" content="Lightweight multi-client launcher and account manager for Roblox. Free, open source, a ~60 KB download.">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta property="og:url" content="https://blnkdev.github.io/MultiRoblox/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="features.html">Features</a>
+      <a href="guide.html">Guide</a>
+      <a href="security.html">Security</a>
+      <a href="help.html">Help</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="hero">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">Multi-client launcher for Roblox</p>
+        <h1>All your Roblox accounts, <span>one tidy window.</span></h1>
+        <p class="lead">A lightweight account manager and multi-client launcher. Sign in once through your own browser, then launch as many accounts as you like with a single click.</p>
+        <div class="cta">
+          <a class="btn" data-dl href="https://github.com/blnkDev/MultiRoblox/releases/latest">Download for Windows</a>
+          <a class="btn ghost" href="features.html">Explore features</a>
+        </div>
+        <p class="fine" data-meta>Windows 10 / 11 &middot; free &amp; open source (MIT) &middot; a ~60 KB download, no installer</p>
+      </div>
+      <figure class="shot">
+        <img src="site-shot.png" width="558" height="574" alt="MultiRoblox window showing four demo accounts with online status, the selected game and the Play button">
+      </figure>
+    </div>
+  </div>
+
+  <section>
+    <div class="wrap">
+      <h2>Everything you need, nothing you don't</h2>
+      <p class="sub">One small program that does the boring parts of juggling several Roblox accounts.</p>
+      <div class="grid">
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg></div>
+          <h3>True multi-client</h3><p>Run several accounts side by side. MultiRoblox holds Roblox's single-instance lock so every client can start.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+          <h3>No stored passwords</h3><p>Sign in through your default browser, with the normal captcha and 2FA. Only the session cookie is kept, encrypted with Windows DPAPI.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></div>
+          <h3>Launch many at once</h3><p>Select accounts and press Play. It opens them one by one, confirms each client started and flags the ones that failed.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3Z"/></svg></div>
+          <h3>Games by Place ID</h3><p>See the game's name, icon and live player count. Star your favorites and switch between them in one click.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+          <h3>Online status</h3><p>See at a glance which account is offline, on the website or in a game, and which game it is in.</p></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg></div>
+          <h3>Tile windows</h3><p>Arrange every Roblox client side by side in a neat grid, following your account order.</p></div>
+      </div>
+      <a class="more" href="features.html">See all features</a>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap">
+      <h2>Up and running in a minute</h2>
+      <p class="sub">There is nothing to install: extract the zip and run the program.</p>
+      <div class="grid steps">
+        <div class="card"><h3>Add your accounts</h3><p>Click <strong>+ Add account</strong>. Your browser opens on roblox.com, you sign in as usual, and the account shows up in the list.</p></div>
+        <div class="card"><h3>Pick a game</h3><p>Type a <strong>Place ID</strong> or choose a favorite. The name, icon and live player count appear right away.</p></div>
+        <div class="card"><h3>Press Play</h3><p>Select the accounts you want, click <strong>Play</strong>, then <strong>Tile windows</strong> to arrange the clients.</p></div>
+      </div>
+      <a class="more" href="guide.html">Read the full guide</a>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="notice">
+        <h2>Read this before you use it</h2>
+        <ul>
+          <li>MultiRoblox is <strong>not affiliated with, approved by or endorsed by Roblox Corporation.</strong></li>
+          <li>Running several clients <strong>may violate Roblox's Terms of Use</strong> and <strong>can get accounts punished or banned.</strong> Use it at your own risk, preferably with disposable accounts.</li>
+          <li>It relies on a mechanism of the Roblox client that <strong>may change or stop working with any update.</strong></li>
+        </ul>
+        <a class="more" href="security.html">How your data is handled</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap">
+      <div class="cta-band">
+        <h2>Ready to try it?</h2>
+        <p>Free, open source and about 60 KB. Extract, run, done.</p>
+        <a class="btn" data-dl href="https://github.com/blnkDev/MultiRoblox/releases/latest">Download for Windows</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>

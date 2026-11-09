@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide - MultiRoblox</title>
+<meta name="description" content="How to use MultiRoblox: from download to your first multi-account launch, with tips, shortcuts and what every label means.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/guide.html">
+<meta property="og:title" content="MultiRoblox guide">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="guide.html" aria-current="page">Guide</a>
+      <a href="security.html">Security</a>
+      <a href="help.html">Help</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-head">
+    <div class="wrap">
+      <h1>Guide</h1>
+      <p>From download to your first multi-account launch, plus the tips that save time.</p>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="wrap">
+      <h2>Getting started</h2>
+      <ol class="guide">
+        <li><h3>Download and run it</h3><p>Get the latest zip from the <a href="download.html">Download</a> page, extract it anywhere and run <code>MultiRoblox.exe</code>. The program is not code-signed, so Windows SmartScreen may warn you the first time (<em>More info &rarr; Run anyway</em>).</p></li>
+        <li><h3>Close every Roblox window</h3><p>The panel at the top shows <span class="chip wait">WAITING</span> while a client opened before MultiRoblox is still holding the lock. Close all Roblox windows and it turns into <span class="chip on">MULTI ON</span> by itself.</p></li>
+        <li><h3>Add your accounts</h3><p>Click <strong>+ Add account</strong>. Your browser opens on roblox.com/login: sign in as usual, captcha and 2FA included. The program waits up to 10 minutes, notices the login, closes the temporary browser and adds the account. Repeat for each account. Every sign-in uses a fresh browser profile, so you never need to log out of another account first.</p></li>
+        <li><h3>Pick a game</h3><p>Type the game's <strong>Place ID</strong>, the number in its address: <code>roblox.com/games/&lt;Place ID&gt;/Name</code>. The name, icon and player count appear to confirm it is the right one. Click the star to add it to your favorites.</p></li>
+        <li><h3>Select accounts and press Play</h3><p>Select one or more accounts (<code>Ctrl</code> or <code>Shift</code> for several) and click <strong>Play</strong>. The clients open one by one; each row shows <span class="chip on">open</span> once its client is up, or a red message if it failed.</p></li>
+        <li><h3>Arrange and follow</h3><p><strong>Tile windows</strong> lines the clients up in a grid. <strong>Follow user...</strong> joins the server where a friend (or another account of yours) is playing.</p></li>
+      </ol>
+
+      <h2>Shortcuts and tips</h2>
+      <div class="tablewrap"><table>
+        <tr><th>To do this</th><th>Do this</th></tr>
+        <tr><td>Select several accounts</td><td><code>Ctrl</code>+click or <code>Shift</code>+click</td></tr>
+        <tr><td>Set a nickname</td><td>Double-click the account and type right on its row (<code>Enter</code> saves, <code>Esc</code> cancels), or select it and click <strong>Nickname</strong></td></tr>
+        <tr><td>Reorder accounts</td><td>Drag and drop, or <code>Alt</code>+<code>&uarr;</code> / <code>Alt</code>+<code>&darr;</code> (moves all selected)</td></tr>
+        <tr><td>Favorite a game</td><td>Click the star next to the Place ID, then pick it later from the Favorites dropdown</td></tr>
+        <tr><td>Refresh online status</td><td>Click <strong>&#8635; Status</strong></td></tr>
+        <tr><td>Close one account's client</td><td>Right-click the account and choose <strong>Close client</strong>. Only clients opened by MultiRoblox can be closed this way</td></tr>
+        <tr><td>Lock the program</td><td>Tray icon menu &rarr; <strong>Set password...</strong>. It is asked when the program opens. <strong>Lock now</strong> in the same menu hides the window until the password is typed again. Change or remove it from that menu too</td></tr>
+        <tr><td>See what went wrong</td><td>Click <strong>Open log</strong> (bottom right), or use the tray menu. <strong>Open data folder</strong> is there too</td></tr>
+        <tr><td>Keep it running in the background</td><td>Minimize it to the taskbar like any other app: multi-client keeps working. Closing the window quits the program</td></tr>
+        <tr><td>Tray menu</td><td>Show, Lock now (when a password is set), Check for updates now, Check for updates automatically, Open log, Open data folder, Set password..., Exit</td></tr>
+        <tr><td>Quit and turn multi-client off</td><td>Close the window, or Exit from the tray menu</td></tr>
+      </table></div>
+
+      <h2>What the labels mean</h2>
+      <div class="tablewrap"><table>
+        <tr><th>Label</th><th>Meaning</th></tr>
+        <tr><td><span class="chip on">MULTI ON</span></td><td>Multi-client is active. Clients you open now can run side by side.</td></tr>
+        <tr><td><span class="chip wait">WAITING</span></td><td>A Roblox client opened before MultiRoblox is holding the lock. Close all of them.</td></tr>
+        <tr><td><span class="chip on">open</span></td><td>The client for this account is running.</td></tr>
+        <tr><td><span class="chip on">in game: name</span></td><td>The account is playing that game right now.</td></tr>
+        <tr><td><span class="chip info">online (website)</span></td><td>The account is online on the Roblox website or app, not in a game.</td></tr>
+        <tr><td><span class="chip">offline</span></td><td>The account is not online.</td></tr>
+        <tr><td>Dot on the picture</td><td>Green: in a game. Blue: online. Orange: in Roblox Studio. Gray: offline. No dot: not checked yet.</td></tr>
+        <tr><td><span class="chip bad">login expired</span></td><td>Roblox ended that login (new sign-in elsewhere, password change...). Add the account again.</td></tr>
+        <tr><td><span class="chip bad">Roblox did not open</span></td><td>No client appeared within about 45 seconds. See the <a href="help.html">Help</a> page.</td></tr>
+        <tr><td><span class="chip bad">rate limited</span></td><td>Roblox is limiting how fast you can start clients. Wait a minute and try again.</td></tr>
+        <tr><td><span class="chip bad">locked or restricted</span></td><td>Roblox refused the request (HTTP 403). The account may be locked or under review: check it on roblox.com.</td></tr>
+        <tr><td><span class="chip bad">could not reach Roblox</span></td><td>There is no connection to Roblox right now. Check your internet and try again.</td></tr>
+      </table></div>
+
+      <h2>Where your data lives</h2>
+      <p class="sub" style="margin-bottom:0">Everything is stored in <code>%APPDATA%\MultiRoblox</code>. Delete that folder and the program to remove all traces. Details on the <a href="security.html">Security</a> page.</p>
+
+      <a class="more" href="help.html">Something not working? Open the Help page</a>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>

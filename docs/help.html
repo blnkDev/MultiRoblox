@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Help - MultiRoblox</title>
+<meta name="description" content="Answers to common MultiRoblox questions and fixes for the usual problems: WAITING status, expired logins, Roblox not opening, SmartScreen and more.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/help.html">
+<meta property="og:title" content="MultiRoblox help">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="guide.html">Guide</a>
+      <a href="security.html">Security</a>
+      <a href="help.html" aria-current="page">Help</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-head">
+    <div class="wrap">
+      <h1>Help</h1>
+      <p>Short answers to the usual questions, and what to try when something does not work.</p>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="wrap">
+      <h2>Common questions</h2>
+      <details open><summary>Why does the panel say "WAITING"?</summary><p>A Roblox client that was opened before MultiRoblox is still holding the lock. Close every Roblox window (check Task Manager for <code>RobloxPlayerBeta</code>) and the panel turns into <strong>MULTI ON</strong> by itself. Only clients opened after MultiRoblox can run side by side.</p></details>
+      <details><summary>Which browsers work for signing in?</summary><p>Your default browser, if it is Firefox or a Chromium-based one (Edge, Chrome, Brave, Vivaldi). Anything else falls back to Edge or Chrome.</p></details>
+      <details><summary>An account shows a letter instead of its picture</summary><p>Roblox can take a while to prepare the picture of a new account, or hold it back while it is being reviewed. The colored letter is shown until the picture is ready, and pictures are refreshed every time the program opens (and at most every 12 hours). If it never appears, check your connection.</p></details>
+      <details><summary>Does it work with the Roblox app from the Microsoft Store?</summary><p>It is built for the Roblox client installed from the Roblox website (the <code>roblox-player:</code> protocol). The Microsoft Store version has not been tested.</p></details>
+      <details><summary>Windows SmartScreen or my antivirus warns me. Is it a virus?</summary><p>The program is new and not code-signed, which is enough to trigger a warning. You can read the whole source, build it yourself, or compare the SHA-256 hash of the download with the one published on the release page. If your antivirus quarantines the file, you can restore it or build from source.</p></details>
+      <details><summary>How do updates work?</summary><p>When a new release is published, an <strong>Update</strong> button appears in the title bar and opens the download page. Nothing is installed automatically, and you can turn the check off from the tray icon menu.</p></details>
+      <details><summary>How do I remove it completely?</summary><p>Delete the program and the <code>%APPDATA%\MultiRoblox</code> folder. Nothing else is installed or changed on your PC.</p></details>
+      <details><summary>Can I lock MultiRoblox with a password?</summary><p>Yes. Right-click the tray icon and choose <strong>Set password...</strong>. MultiRoblox will then ask for it whenever it opens. Choose <strong>Lock now</strong> from the same menu to hide the window and require the password to bring it back; multi-client keeps running while it is locked. The password only locks the program window: your accounts file is still protected by Windows (DPAPI), not by this password.</p></details>
+      <details><summary>I forgot my password</summary><p>Close MultiRoblox, delete <code>%APPDATA%\MultiRoblox\lock.dat</code> and open it again: the lock is gone and your accounts are untouched. This is why the lock is a convenience, not strong protection against someone who has access to your Windows account.</p></details>
+
+      <h2>When something does not work</h2>
+      <details><summary>An account says "login expired"</summary><p>Roblox ended that login, which happens after a new sign-in elsewhere, a password change or a long time without use. Click <strong>+ Add account</strong> and sign in to it again: the existing entry is updated.</p></details>
+      <details><summary>"Roblox did not open" for an account</summary><p>No Roblox client appeared within about 45 seconds. Make sure Roblox is installed from roblox.com and opens normally on its own, then try again. Roblox also limits how fast you can start clients, so launching a few at a time helps. The details are in <code>%APPDATA%\MultiRoblox\log.txt</code>.</p></details>
+      <details><summary>The second client still closes the first one</summary><p>Check that the panel says <strong>MULTI ON</strong> before you open the clients. If it does and the first client still closes, Roblox may have changed the mechanism MultiRoblox relies on. That is outside the program's control, and the project cannot work around it.</p></details>
+      <details><summary>The sign-in browser opens but the account is never added</summary><p>The program waits up to 10 minutes for you to finish signing in. If the login page loaded but nothing happens afterwards, check <code>log.txt</code>: it lists every step of the sign-in. Closing the browser window by hand cancels the attempt.</p></details>
+      <details><summary>"Could not check for updates"</summary><p>The update check needs to reach <code>api.github.com</code>. It can fail behind some networks or when GitHub rate-limits your connection. It is harmless: try again later from the tray menu.</p></details>
+
+      <h2>Report a problem</h2>
+      <div class="panel stack">
+        <p style="margin:0">Open an issue on <a href="https://github.com/blnkDev/MultiRoblox/issues">GitHub</a> and include your Windows version, the MultiRoblox version (shown in the title bar), what you did and what happened.</p>
+        <p style="margin:0;color:var(--muted)">Click <strong>Open log</strong> at the bottom right of the window (or use the tray menu) to open <code>log.txt</code>. It never contains your cookie, but look through it before posting and remove anything personal. Never share <code>accounts.dat</code>.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>

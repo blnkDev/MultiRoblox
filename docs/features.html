@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Features - MultiRoblox</title>
+<meta name="description" content="Everything MultiRoblox does: multi-client, browser sign-in without stored passwords, launching many accounts, nicknames and ordering, games by Place ID, follow user, online status, window tiling and update notices.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/features.html">
+<meta property="og:title" content="MultiRoblox features">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="features.html" aria-current="page">Features</a>
+      <a href="guide.html">Guide</a>
+      <a href="security.html">Security</a>
+      <a href="help.html">Help</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-head">
+    <div class="wrap">
+      <h1>Features</h1>
+      <p>A small program with one job: making several Roblox accounts painless to run.</p>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="wrap">
+      <div class="grid">
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3 3 8l9 5 9-5-9-5Z"/><path d="m3 13 9 5 9-5"/></svg></div>
+          <h3>True multi-client</h3>
+          <p>Roblox refuses to start a second client by using two Windows objects as a lock. MultiRoblox holds both, so every client believes it is the only one.</p>
+          <ul><li>Nothing is injected into Roblox and no Roblox memory is read.</li><li>Only affects clients opened <em>after</em> MultiRoblox, while it is running.</li><li>The panel shows <strong>MULTI ON</strong> or <strong>WAITING</strong>.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></div>
+          <h3>Sign in with your browser</h3>
+          <p>Adding an account opens your default browser on roblox.com. You sign in with the normal captcha and 2FA, and the account appears in the list.</p>
+          <ul><li>Works with Firefox, Edge, Chrome, Brave and Vivaldi.</li><li>A temporary, empty browser profile is used and deleted afterwards.</li><li>No password is stored: only the session cookie, encrypted with Windows DPAPI.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"/></svg></div>
+          <h3>Launch many at once</h3>
+          <p>Select several accounts (<code>Ctrl</code> or <code>Shift</code>) and press Play.</p>
+          <ul><li>Opens the clients one by one, with a short pause between them.</li><li>Waits for each Roblox client to actually appear before moving on.</li><li>Flags the accounts that failed and tells you how many opened.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></div>
+          <h3>Nicknames and ordering</h3>
+          <p>Give every account a name you recognize and put them in the order you like.</p>
+          <ul><li>Double-click an account and type its nickname right on the row.</li><li>Drag and drop, or use <code>Alt</code>+<code>&uarr;</code>/<code>&darr;</code> (moves all selected).</li><li>The order is saved and also used when tiling windows.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9L12 3Z"/></svg></div>
+          <h3>Games by Place ID</h3>
+          <p>Type a Place ID and see the game's name, icon and live player count before you launch.</p>
+          <ul><li>Star a game to add it to your favorites, then switch with the dropdown.</li><li>The last game you launched is remembered.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M17 11a3 3 0 1 0 0-6M18.5 14.2A6 6 0 0 1 21.5 20"/></svg></div>
+          <h3>Follow a user</h3>
+          <p>Join the server of a friend, or of another account of yours, without hunting for the game first.</p>
+          <ul><li>Pick one of your accounts or type a username or ID.</li><li>Roblox requires friendship or permission to join.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+          <h3>Online status</h3>
+          <p>See whether each account is offline, online on the website, in Roblox Studio, or in a game (and which one). A colored dot on its profile picture shows it at a glance.</p>
+          <ul><li>Refreshed when the program opens and when you click Status.</li><li>Each account is checked with its own cookie.</li><li>Every account shows its Roblox profile picture, cached on your PC.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg></div>
+          <h3>Tile windows</h3>
+          <p>One click arranges every Roblox client side by side in a grid that fills your screen.</p>
+          <ul><li>Follows your account order.</li><li>DPI-aware, so sizes come out right on scaled displays.</li><li>Uses the primary monitor.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 20h16"/></svg></div>
+          <h3>Update notice</h3>
+          <p>When a new release is published, an <strong>Update</strong> button appears in the title bar and opens the download page.</p>
+          <ul><li>Checks on startup and every 6 hours.</li><li>Nothing is downloaded or installed automatically.</li><li>Can be turned off from the tray icon menu.</li></ul></div>
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/></svg></div>
+          <h3>Password lock</h3>
+          <p>Optionally ask for a password every time MultiRoblox opens, and lock it again whenever you want from the tray menu.</p>
+          <ul><li>Set it from the tray icon menu.</li><li>It only locks the program window: your accounts stay protected by Windows, not by this password.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m9 9 6 6M15 9l-6 6"/></svg></div>
+          <h3>Close one client</h3>
+          <p>Right-click an account and choose <strong>Close client</strong> to shut down just that account's Roblox, without touching the others.</p>
+          <ul><li>Works for the clients MultiRoblox opened.</li><li>Also has Play, Nickname and Remove.</li></ul></div>
+
+        <div class="card"><div class="ico"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></div>
+          <h3>Clear errors and a log</h3>
+          <p>When something fails, each account says why: expired login, rate limit, locked account or no connection.</p>
+          <ul><li>An <strong>Open log</strong> button shows the details.</li><li>The log never contains your cookie.</li></ul></div>
+      </div>
+
+      <h2>Small things that matter</h2>
+      <div class="grid">
+        <div class="card"><h3>Login check on startup</h3><p>Accounts whose login expired are marked in red, so you find out before pressing Play.</p></div>
+        <div class="card"><h3>Taskbar and tray</h3><p>Minimizes to the taskbar like any normal app. A tray icon gives quick access to updates, the log and the password lock.</p></div>
+        <div class="card"><h3>Dark, custom window</h3><p>A custom title bar and a dark theme that stays consistent, even when the window loses focus.</p></div>
+        <div class="card"><h3>Tiny and portable</h3><p>A single file of about 60 KB. No installer, no runtime to download: it uses the .NET Framework that ships with Windows.</p></div>
+      </div>
+
+      <div style="margin-top:56px"><div class="cta-band">
+        <h2>Want to try it?</h2>
+        <p>Free and open source. Takes less than a minute.</p>
+        <a class="btn" data-dl href="https://github.com/blnkDev/MultiRoblox/releases/latest">Download for Windows</a>
+      </div></div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>

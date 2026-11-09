@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://blnkdev.github.io/MultiRoblox/sitemap.xml

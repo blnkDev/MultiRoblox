@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Security and privacy - MultiRoblox</title>
+<meta name="description" content="What MultiRoblox stores, who it talks to and how to verify it: no stored passwords, DPAPI-encrypted cookies, no telemetry, open source.">
+<meta name="theme-color" content="#0b0b10">
+<link rel="icon" href="icon.png">
+<link rel="canonical" href="https://blnkdev.github.io/MultiRoblox/security.html">
+<meta property="og:title" content="MultiRoblox security and privacy">
+<meta property="og:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="MultiRoblox: multi-client launcher and account manager for Roblox">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://blnkdev.github.io/MultiRoblox/og.png">
+<link rel="stylesheet" href="style.css">
+<script>(function(){var d=document.documentElement;d.classList.add('js');var t=null;try{t=localStorage.getItem('theme')}catch(e){}if(t!=='light'&&t!=='dark')t=window.matchMedia&&matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';d.dataset.theme=t})()</script>
+</head>
+
+<body>
+<header class="site-nav">
+  <div class="nav-in">
+    <a class="wordmark" href="index.html">MultiRoblox</a>
+    <nav id="navlinks" class="links" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="features.html">Features</a>
+      <a href="guide.html">Guide</a>
+      <a href="security.html" aria-current="page">Security</a>
+      <a href="help.html">Help</a>
+      <a href="changelog.html">Changelog</a>
+      <a href="download.html">Download</a>
+    </nav>
+    <div class="nav-right">
+      <button class="theme-btn" type="button" aria-label="Switch between light and dark theme" title="Switch theme"><svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/></svg></button>
+      <a class="gh" href="https://github.com/blnkDev/MultiRoblox"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg><span class="gh-t">GitHub</span></a>
+      <button class="menu-btn" type="button" aria-expanded="false" aria-controls="navlinks">Menu</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="page-head">
+    <div class="wrap">
+      <h1>Security and privacy</h1>
+      <p>An account manager handles sensitive data, so it is open source and its behavior is short enough to list here.</p>
+    </div>
+  </div>
+
+  <div class="page-body">
+    <div class="wrap">
+      <h2>What is stored</h2>
+      <div class="tablewrap"><table>
+        <tr><th>File</th><th>What it holds</th><th>Protection</th></tr>
+        <tr><td><code>accounts.dat</code></td><td>Your accounts: Roblox user ID, name, nickname and the session cookie</td><td>Encrypted with the Windows DPAPI, readable only by your Windows user on this PC</td></tr>
+        <tr><td><code>favs.txt</code></td><td>Favorite games (Place ID and name)</td><td>Plain text, nothing sensitive</td></tr>
+        <tr><td><code>place.txt</code></td><td>The last Place ID you launched</td><td>Plain text, nothing sensitive</td></tr>
+        <tr><td><code>log.txt</code></td><td>Diagnostic messages. It never contains the cookie</td><td>Plain text</td></tr>
+        <tr><td><code>lock.dat</code></td><td>Only if you set a password: a salted PBKDF2 hash of it. The password itself is never stored</td><td>Hashed, 100,000 rounds</td></tr>
+        <tr><td><code>avatars\</code></td><td>Cached profile pictures of your accounts: public images from Roblox, refreshed every 12 hours</td><td>Plain image files, nothing sensitive</td></tr>
+        <tr><td><code>update-check-off.txt</code></td><td>Only exists if you turned off update checks</td><td>-</td></tr>
+      </table></div>
+      <p class="sub" style="margin:14px 0 0">All of it lives in <code>%APPDATA%\MultiRoblox</code>. <strong>No Roblox password is ever stored.</strong> To remove everything, delete that folder.</p>
+      <p class="sub" style="margin:10px 0 0">The optional <strong>password lock</strong> only locks the program window. It does not encrypt your accounts any further: <code>accounts.dat</code> stays protected by the Windows DPAPI, which ties it to your Windows user. Treat the lock as protection against casual use of your PC, not against someone who controls your Windows account.</p>
+
+      <h2>Who it talks to</h2>
+      <div class="tablewrap"><table>
+        <tr><th>Host</th><th>Why</th><th>Cookie sent?</th></tr>
+        <tr><td><code>*.roblox.com</code></td><td>Checking logins, one-time sign-in tickets to launch games, online status, game names and player counts</td><td>Only for login checks, tickets and online status, and only to roblox.com</td></tr>
+        <tr><td>Roblox image CDN</td><td>Game icons and profile pictures (only Roblox's own CDN, over https)</td><td>No</td></tr>
+        <tr><td><code>api.github.com</code></td><td>The optional update check</td><td>No. GitHub sees your IP address like in any web request</td></tr>
+      </table></div>
+      <p class="sub" style="margin:14px 0 0">Nothing else: no analytics, no crash reports, no server of its own.</p>
+
+      <h2>How sign-in works</h2>
+      <div class="panel stack">
+        <p style="margin:0">When you click <strong>+ Add account</strong>, the program opens your default browser with a <strong>temporary, empty profile</strong> and a local debugging port. Chromium-based browsers (Edge, Chrome, Brave, Vivaldi) use the Chrome DevTools Protocol; Firefox uses WebDriver BiDi. Once you are signed in, the cookie is read through that channel, validated with Roblox, and the browser is closed.</p>
+        <p style="margin:0;color:var(--muted)">The temporary profile is deleted afterwards, and only processes that use that unique profile are closed. Your own browser data, tabs and saved passwords are never touched.</p>
+      </div>
+
+      <h2>Verify it yourself</h2>
+      <div class="two">
+        <div class="card"><h3>Read and build the code</h3><ul>
+          <li>The whole program is one C# file on <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a>.</li>
+          <li>The compiler already ships with Windows: run <code>.\build.ps1</code> and compare.</li></ul></div>
+        <div class="card"><h3>Check the download</h3><ul>
+          <li>Every release lists a SHA-256 hash. Compare it with <code>Get-FileHash</code>.</li>
+          <li>The executable is <strong>not code-signed</strong>, so SmartScreen may warn on the first run.</li></ul></div>
+      </div>
+
+      <h2>Read this before you use it</h2>
+      <div class="notice">
+        <ul>
+          <li>MultiRoblox is <strong>not affiliated with, approved by or endorsed by Roblox Corporation.</strong></li>
+          <li>Running several clients <strong>may violate Roblox's Terms of Use</strong> or the rules of specific games, and <strong>can get accounts punished or banned.</strong> Use it at your own risk, preferably with disposable accounts.</li>
+          <li>Anyone with the cookie can enter the account without the password or 2FA, so <strong>never share</strong> <code>accounts.dat</code> or the <code>%APPDATA%\MultiRoblox</code> folder.</li>
+          <li>It relies on a mechanism of the Roblox client that <strong>may change or stop working with any update.</strong></li>
+          <li>It is not for cheating or automation: there are no macros, no anti-AFK and no game automation.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>MultiRoblox is free software released under the <a href="https://github.com/blnkDev/MultiRoblox/blob/main/LICENSE">MIT license</a>. It is not affiliated with Roblox Corporation; "Roblox" is a trademark of its owners.</p>
+    <p><a href="download.html">Download</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox">GitHub</a> &middot; <a href="changelog.html">Changelog</a> &middot; <a href="https://github.com/blnkDev/MultiRoblox/issues">Report a problem</a></p>
+  </div>
+</footer>
+<script src="site.js" defer></script>
+</body>
+</html>
