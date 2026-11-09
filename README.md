@@ -6,6 +6,8 @@
 
 **A lightweight, dark-themed multi-client launcher and account manager for Roblox. No installer needed.**
 
+**[Website](https://blnkdev.github.io/MultiRoblox/)** · **[Download](https://github.com/blnkDev/MultiRoblox/releases/latest)**
+
 [![Release](https://img.shields.io/github/v/release/blnkDev/MultiRoblox?style=flat-square&color=6366f1)](https://github.com/blnkDev/MultiRoblox/releases/latest)
 [![Build](https://img.shields.io/github/actions/workflow/status/blnkDev/MultiRoblox/release.yml?style=flat-square)](https://github.com/blnkDev/MultiRoblox/actions)
 [![License](https://img.shields.io/badge/license-MIT-6366f1?style=flat-square)](LICENSE)
@@ -23,14 +25,18 @@
 - **Multi-client:** run several Roblox accounts at the same time, each in its own client.
 - **No stored passwords:** you sign in through your **default browser** (Firefox, Edge, Chrome, Brave or Vivaldi), with the normal captcha and 2FA. The program only keeps the session cookie, **encrypted** for your Windows user.
 - **Launch many at once:** select the accounts and click Play. It opens them one by one, confirms each client actually started, and flags the ones that failed.
-- **Nicknames** for every account (double-click).
+- **Nicknames** for every account: double-click it and type right on the row (Enter saves, Esc cancels).
 - **Reorder accounts:** drag and drop, or `Alt`+`↑`/`↓` (moves all selected). The order is saved and also used when tiling windows.
 - **Game by Place ID:** shows the name, icon and live player count. Favorite games with the star ☆ and switch between them in one click.
 - **Follow user:** join the server of a friend or of another account of yours.
-- **Online status:** see whether each account is offline, on the website, or in a game (and which one).
+- **Profile pictures:** each account shows its Roblox avatar (downloaded once, cached on your PC and refreshed every 12 hours), with the colored initial as a fallback.
+- **Online status:** see whether each account is offline, on the website, or in a game (and which one). A colored dot on the avatar shows it at a glance: green in game, blue online, orange in Studio, gray offline.
 - **Tile windows:** arrange all clients side by side in a grid.
 - **Login check on startup:** accounts whose login expired are marked in red.
 - **Update notice:** checks GitHub for a newer release (on startup and every 6 hours) and shows an **Update** button in the title bar that opens the release page. It never downloads or installs anything by itself. You can turn it off in the tray menu.
+- **Close one client:** right-click an account and choose **Close client** to shut down just that account's Roblox.
+- **Password lock (optional):** ask for a password when the program opens. **Lock now** in the tray menu hides the window until the password is typed again. Set it from the tray icon menu.
+- **Clear errors and a log:** when something fails, each account says why (expired login, rate limit, locked account, no connection), and an **Open log** button shows the details.
 - **Custom UI:** dark theme, custom title bar, system tray icon.
 
 ## Installation
@@ -48,7 +54,7 @@
 3. Enter the game's **Place ID** (or pick a favorite), select the accounts (`Ctrl`/`Shift` for several) and click **▶ Play**.
 4. Use **Tile windows** to arrange the clients on screen.
 
-> Multi-client only applies to clients opened **after** MultiRoblox, and only while it is running. Minimizing sends it to the system tray; closing the window turns multi-client off.
+> Multi-client only applies to clients opened **after** MultiRoblox, and only while it is running. Minimizing keeps it in the taskbar like any other app and multi-client keeps working; closing the window turns multi-client off.
 
 ## Security and privacy
 
@@ -56,6 +62,7 @@
 - **No telemetry and no server of its own.** The program only talks to `*.roblox.com`, Roblox's image CDN and, for the optional update check, `api.github.com` (no account data is sent; GitHub sees your IP address like in any web request). The cookie is only ever sent to `roblox.com`.
 - Sign-in uses a **temporary, empty browser profile** that is deleted afterwards. Your own browser data, tabs and saved passwords are never touched.
 - ⚠️ **Anyone who has the cookie can enter the account without the password or 2FA.** Never share `accounts.dat` or the `%APPDATA%\MultiRoblox` folder.
+- The optional **password lock** only locks the program window (it stores a salted PBKDF2 hash in `lock.dat`). It does not encrypt your accounts any further: `accounts.dat` stays protected by the Windows DPAPI. Treat it as protection against casual use of your PC, not against someone who controls your Windows account.
 - All the source code is in this repository: you can read it, build it and compare.
 
 ## ⚠️ Important notice
@@ -76,7 +83,7 @@
 - **Storage:** `accounts.dat` = DPAPI (current user scope). Favorites and the last game are plain text (`favs.txt`, `place.txt`). Errors go to `log.txt` (never the cookie).
 - **Windows:** tiling uses `SetWindowPos` with Roblox's DPI awareness, so sizes come out right on scaled displays.
 
-Files in `%APPDATA%\MultiRoblox\`: `accounts.dat`, `favs.txt`, `place.txt`, `log.txt`. To remove everything, delete the folder.
+Files in `%APPDATA%\MultiRoblox\`: `accounts.dat`, `favs.txt`, `place.txt`, `log.txt`, the `avatars\` folder (cached profile pictures) and, if you set a password, `lock.dat`. To remove everything, delete the folder.
 
 </details>
 
@@ -106,13 +113,15 @@ Command-line options (for development):
 | `--logintest` | opens the default browser with no window and no sign-in and checks the protocol; 0 = ok |
 | `--makeico <file>` | generates the program's `.ico` |
 
+Setting the `MULTIROBLOX_DATA` environment variable to a folder makes the program use that folder instead of `%APPDATA%\MultiRoblox`, which is handy for testing without touching real accounts.
+
 Layout:
 
 ```
 src/MultiRoblox.cs     source code (single file)
 src/AssemblyInfo.cs    version and metadata (source of truth for the version)
 assets/                program icon
-docs/                  README screenshot
+docs/                  project website (GitHub Pages) and README screenshot
 build.ps1              build + self-test + package
 .github/workflows/     CI and release publishing
 ```
