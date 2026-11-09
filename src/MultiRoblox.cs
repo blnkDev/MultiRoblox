@@ -59,6 +59,15 @@ static class Store
         catch (Exception) { }
     }
 
+    static string UpdateOffFile { get { return Path.Combine(Dir, "update-check-off.txt"); } }
+    public static bool UpdateCheckOn() { return !File.Exists(UpdateOffFile); }
+    public static void SetUpdateCheck(bool on)
+    {
+        if (ReadOnly) return;
+        try { Directory.CreateDirectory(Dir); if (on) File.Delete(UpdateOffFile); else File.WriteAllText(UpdateOffFile, "update checks are off; delete this file to turn them on"); }
+        catch (Exception) { }
+    }
+
     public static bool ReadOnly;   // --demo: fake data, nothing is written
 
     public static void Log(string line)
@@ -129,7 +138,7 @@ static class Roblox
 
     public class GameInfo { public string Name; public long Playing; public Image Icon; }
 
-    static async Task<string> GetPublic(string url)
+    public static async Task<string> GetPublic(string url)
     {
         var r = new HttpRequestMessage(HttpMethod.Get, url);
         r.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
@@ -633,6 +642,12 @@ class TitleBar : EdgePanel
     }
 }
 
+// ListBox with double buffering, so the drag insertion marker does not flicker.
+class AccountList : ListBox
+{
+    public AccountList() { DoubleBuffered = true; }
+}
+
 class MainForm : Form
 {
     static readonly Color Bg = Color.FromArgb(18, 18, 22), Card = Color.FromArgb(28, 28, 35), CardSel = Color.FromArgb(44, 44, 68),
@@ -645,13 +660,18 @@ class MainForm : Form
     readonly EventWaitHandle ev = new EventWaitHandle(false, EventResetMode.ManualReset, "ROBLOX_singletonEvent");
     public static bool Demo;
     readonly List<Account> accounts = Demo ? DemoAccounts() : Store.Load();
-    readonly ListBox list = new ListBox();
+    readonly AccountList list = new AccountList();
+    int dragIndex = -1, dropLine = -1; Point dragStart;
     readonly TextBox place = new TextBox();
     readonly Label pill = new Label(), clients = new Label(), msg = new Label();
     readonly Button btnAdd, btnNick, btnRemove, btnPlay, btnStar, btnTile, btnFollow, btnPres;
     readonly TitleBar bar = new TitleBar();
     readonly EdgePanel body = new EdgePanel();
     CaptionButton btnMin, btnMax, btnClose;
+    Button btnUpdate;
+    string updateUrl;
+    const string UpdateApiDefault = "https://api.github.com/repos/blnkDev/MultiRoblox/releases/latest";
+    static string UpdateApi = UpdateApiDefault;
     readonly ComboBox favBox = new ComboBox();
     readonly List<KeyValuePair<long, string>> favs = Store.LoadFavs();
     string lastGameName = ""; long lastGameId; bool syncing;
@@ -667,6 +687,8 @@ class MainForm : Form
     [STAThread]
     static int Main(string[] args)
     {
+        int ui = Array.IndexOf(args, "--update-url");   // for testing the update notice against a local file
+        if (ui >= 0 && ui + 1 < args.Length) UpdateApi = args[ui + 1];
         if (args.Length > 0 && args[0] == "--selftest") return SelfTest();
         if (args.Length > 1 && args[0] == "--makeico") return MakeIco(args[1]);   // generates the exe icon (build tool)
         if (args.Length > 0 && args[0] == "--demo") { Demo = true; Store.ReadOnly = true; }   // fake accounts, nothing written: for screenshots and the README
@@ -692,6 +714,16 @@ class MainForm : Form
     // Checks the window grid: right size, everything inside the area, nothing overlapping. Usage: MultiRoblox.exe --selftest
     static int SelfTest()
     {
+        var l = new List<string> { "A", "B", "C", "D" };
+        MoveItem(l, 0, 3); if (string.Join("", l) != "BCAD") return 4;   // drop A before D
+        MoveItem(l, 3, 0); if (string.Join("", l) != "DBCA") return 5;   // D (last) moves to the very top
+        MoveBlock(l, x => x == "B" || x == "C", -1); if (string.Join("", l) != "BCDA") return 6;
+        MoveBlock(l, x => x == "B" || x == "C", -1); if (string.Join("", l) != "BCDA") return 7;   // already at the top: no change
+        MoveBlock(l, x => x == "A", 1); if (string.Join("", l) != "BCDA") return 8;   // already at the bottom: no change
+        MoveBlock(l, x => x == "B", 1); if (string.Join("", l) != "CBDA") return 9;
+        var cur = new Version(1, 0, 0, 0);
+        if (!IsNewer("v1.1.0", cur) || !IsNewer("1.0.1", cur) || !IsNewer("v2.0.0", cur)) return 10;
+        if (IsNewer("v1.0.0", cur) || IsNewer("v0.9.9", cur) || IsNewer("v1.0.0-beta", cur) || IsNewer(null, cur) || IsNewer("latest", cur)) return 11;
         var area = new Rectangle(0, 40, 1920, 1000);
         for (int n = 1; n <= 9; n++)
         {
@@ -809,6 +841,7 @@ class MainForm : Form
                 Marshal.StructureToPtr(wp, m.LParam, false);
             }
         }
+        if (m.Msg == 0x86) { m.LParam = (IntPtr)(-1); base.WndProc(ref m); return; }   // WM_NCACTIVATE: lParam -1 = do not repaint the non-client area (otherwise Windows draws a classic title bar over ours when the window loses focus)
         if (m.Msg == 0x83 && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }   // WM_NCCALCSIZE: client area = the whole window
         if (m.Msg == 0x84) { m.Result = (IntPtr)HitTest(Native.LParamPoint(m.LParam)); return; }   // WM_NCHITTEST
         if (m.Msg == 0x24)   // WM_GETMINMAXINFO: maximize only up to the work area (otherwise it covers the taskbar)
@@ -857,6 +890,11 @@ class MainForm : Form
         list.SelectionMode = SelectionMode.MultiExtended;
         list.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         list.DrawItem += DrawAccount;
+        list.AllowDrop = true;   // reorder: drag an account, or Alt+Up / Alt+Down
+        list.MouseDown += ListMouseDown; list.MouseMove += ListMouseMove;
+        list.DragOver += ListDragOver; list.DragDrop += ListDragDrop;
+        list.DragLeave += delegate { dropLine = -1; list.Invalidate(); };
+        list.KeyDown += ListKeyDown;
 
         const AnchorStyles BL = AnchorStyles.Bottom | AnchorStyles.Left;
         icon.SetBounds(20, 312, 48, 48); icon.SizeMode = PictureBoxSizeMode.StretchImage; icon.BackColor = Card; icon.Anchor = BL;
@@ -897,6 +935,10 @@ class MainForm : Form
         btnMin.Location = new Point(560 - 138, 0); btnMax.Location = new Point(560 - 92, 0); btnClose.Location = new Point(560 - 46, 0);
         foreach (var cb in new[] { btnMin, btnMax, btnClose }) cb.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         bar.Controls.AddRange(new Control[] { btnMin, btnMax, btnClose });
+        btnUpdate = MakeButton("", Accent); btnUpdate.SetBounds(284, 6, 130, 24); btnUpdate.Anchor = AnchorStyles.Top | AnchorStyles.Right; btnUpdate.Visible = false;
+        btnUpdate.Click += delegate { if (updateUrl != null) Process.Start(new ProcessStartInfo(updateUrl) { UseShellExecute = true }); };
+        new ToolTip().SetToolTip(btnUpdate, "A new version is available. Click to open the download page.");
+        bar.Controls.Add(btnUpdate);
         btnMin.Click += delegate { WindowState = FormWindowState.Minimized; };
         btnMax.Click += delegate { WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized; };
         btnClose.Click += delegate { Close(); };
@@ -921,6 +963,10 @@ class MainForm : Form
         tray.DoubleClick += delegate { Restore(); };
         var menu = new ContextMenu();
         menu.MenuItems.Add("Show", delegate { Restore(); });
+        menu.MenuItems.Add("Check for updates now", delegate { CheckUpdate(true); });
+        var autoCheck = new MenuItem("Check for updates automatically") { Checked = Store.UpdateCheckOn() };
+        autoCheck.Click += delegate { autoCheck.Checked = !autoCheck.Checked; Store.SetUpdateCheck(autoCheck.Checked); };
+        menu.MenuItems.Add(autoCheck);
         menu.MenuItems.Add("Exit", delegate { Close(); });
         tray.ContextMenu = menu;
 
@@ -938,10 +984,43 @@ class MainForm : Form
         RefreshList();
         timer.Interval = 1000; timer.Tick += delegate { Tick(); }; timer.Start();
         Tick();
-        Say(accounts.Count == 0 ? "Click \"+ Add account\" to get started." : "Double-click an account to set a nickname.");
+        Say(accounts.Count == 0 ? "Click \"+ Add account\" to get started." : "Double-click: nickname.  Drag or Alt+Up/Down: reorder.");
         LookupGame();
         SyncFavUi();
         if (!Demo) ValidateAll();   // demo: no network to validate fake accounts
+        var upd = new System.Windows.Forms.Timer { Interval = 6 * 60 * 60 * 1000 };   // long-running tray app: look again every 6 hours
+        upd.Tick += delegate { if (Store.UpdateCheckOn() && !btnUpdate.Visible) CheckUpdate(false); };
+        upd.Start();
+        if ((!Demo || UpdateApi != UpdateApiDefault) && Store.UpdateCheckOn()) CheckUpdate(false);
+    }
+
+    // True when 'tag' (vX.Y.Z) is newer than the running version. Anything that is not plain X.Y.Z (pre-releases, junk) is ignored.
+    static bool IsNewer(string tag, Version cur)
+    {
+        Version v;
+        if (tag == null || !System.Text.RegularExpressions.Regex.IsMatch(tag, @"^v?\d+\.\d+\.\d+$") || !Version.TryParse(tag.TrimStart('v'), out v)) return false;
+        return v > new Version(cur.Major, cur.Minor, Math.Max(cur.Build, 0));   // 1.0.0 vs 1.0.0.0 must not count as newer
+    }
+
+    // Asks GitHub for the latest release. Silent unless the user asked (manual). Never downloads or runs anything: it only opens the release page.
+    async void CheckUpdate(bool manual)
+    {
+        try
+        {
+            var o = Roblox.Obj(await Roblox.GetPublic(UpdateApi));
+            string tag = o == null || !o.ContainsKey("tag_name") ? null : o["tag_name"] as string;
+            if (IsDisposed) return;
+            var cur = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            if (IsNewer(tag, cur))
+            {
+                updateUrl = "https://github.com/blnkDev/MultiRoblox/releases/tag/" + tag;   // built here, never taken from the reply
+                btnUpdate.Text = "Update " + (tag.StartsWith("v") ? tag : "v" + tag);
+                btnUpdate.Visible = true;
+                if (manual) Say("Update available: " + tag + ". Click the button in the title bar.");
+            }
+            else if (manual) Say(tag == null ? "Could not check for updates." : "You are up to date (v" + cur.ToString(3) + ").", tag == null);
+        }
+        catch (Exception ex) { Store.Log("Update check error: " + ex.Message); if (manual) Say("Could not check for updates.", true); }
     }
 
     async void ValidateAll()
@@ -958,6 +1037,82 @@ class MainForm : Form
 
     void Restore() { Show(); WindowState = FormWindowState.Normal; Activate(); }
     void Say(string s, bool bad = false) { msg.Text = s; msg.ForeColor = bad ? Red : Muted; }
+
+    // Moves the item at 'from' so it ends up before the item that was at insertion index 'to' (0..Count).
+    static void MoveItem<T>(List<T> l, int from, int to)
+    {
+        if (from < 0 || from >= l.Count) return;
+        var item = l[from];
+        if (to > from) to--;
+        if (to == from) return;
+        l.RemoveAt(from);
+        l.Insert(Math.Max(0, Math.Min(to, l.Count)), item);
+    }
+
+    // Moves every selected item one step (dir -1 = up, +1 = down), keeping their relative order; a block stops at the edge.
+    static void MoveBlock<T>(List<T> l, Func<T, bool> sel, int dir)
+    {
+        if (dir < 0) { for (int i = 1; i < l.Count; i++) if (sel(l[i]) && !sel(l[i - 1])) { var t = l[i]; l[i] = l[i - 1]; l[i - 1] = t; } }
+        else { for (int i = l.Count - 2; i >= 0; i--) if (sel(l[i]) && !sel(l[i + 1])) { var t = l[i]; l[i] = l[i + 1]; l[i + 1] = t; } }
+    }
+
+    void AfterReorder(IList<Account> keep)
+    {
+        Store.Save(accounts);   // the saved order is the list order (and the tiling order)
+        RefreshList();
+        foreach (var a in keep) list.SelectedItems.Add(a);
+    }
+
+    void ListMouseDown(object o, MouseEventArgs e)
+    {
+        dragIndex = e.Button == MouseButtons.Left && (ModifierKeys & (Keys.Control | Keys.Shift)) == 0 ? list.IndexFromPoint(e.Location) : -1;
+        dragStart = e.Location;
+    }
+
+    void ListMouseMove(object o, MouseEventArgs e)
+    {
+        if (dragIndex < 0 || e.Button != MouseButtons.Left) return;
+        if (Math.Abs(e.X - dragStart.X) < SystemInformation.DragSize.Width && Math.Abs(e.Y - dragStart.Y) < SystemInformation.DragSize.Height) return;
+        var a = dragIndex < accounts.Count ? accounts[dragIndex] : null;
+        dragIndex = -1;
+        if (a != null) list.DoDragDrop(a, DragDropEffects.Move);
+        dropLine = -1; list.Invalidate();
+    }
+
+    int InsertionIndex(Point p)   // p in list coordinates; below the last item = Count
+    {
+        int i = list.IndexFromPoint(p);
+        if (i < 0) return list.Items.Count;
+        return p.Y > list.GetItemRectangle(i).Top + list.ItemHeight / 2 ? i + 1 : i;
+    }
+
+    void ListDragOver(object o, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(typeof(Account))) { e.Effect = DragDropEffects.None; return; }
+        e.Effect = DragDropEffects.Move;
+        int line = InsertionIndex(list.PointToClient(new Point(e.X, e.Y)));
+        if (line != dropLine) { dropLine = line; list.Invalidate(); }
+    }
+
+    void ListDragDrop(object o, DragEventArgs e)
+    {
+        var a = e.Data.GetData(typeof(Account)) as Account;
+        int to = InsertionIndex(list.PointToClient(new Point(e.X, e.Y)));
+        dropLine = -1;
+        if (a == null) return;
+        MoveItem(accounts, accounts.IndexOf(a), to);
+        AfterReorder(new[] { a });
+    }
+
+    void ListKeyDown(object o, KeyEventArgs e)
+    {
+        if (!e.Alt || (e.KeyCode != Keys.Up && e.KeyCode != Keys.Down)) return;
+        e.Handled = true; e.SuppressKeyPress = true;
+        var sel = list.SelectedItems.Cast<Account>().ToList();
+        if (sel.Count == 0) return;
+        MoveBlock(accounts, sel.Contains, e.KeyCode == Keys.Up ? -1 : 1);
+        AfterReorder(sel);
+    }
 
     void RefreshList()
     {
@@ -984,6 +1139,11 @@ class MainForm : Form
             TextRenderer.DrawText(g, "\u25CF " + a.Presence, FNote, right, a.PresType == 2 ? Green : a.PresType == 1 ? Accent : Muted, TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
         if (a.Note.Length > 0)
             TextRenderer.DrawText(g, a.Note, FNote, new Rectangle(right.X, row.Y + 26, right.Width, 20), a.Note.StartsWith("!") ? Red : Green, TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
+        if (dropLine >= 0)   // drag insertion marker: above this item, or below the last one
+        {
+            int y = dropLine == e.Index ? e.Bounds.Top + 1 : dropLine == list.Items.Count && e.Index == list.Items.Count - 1 ? e.Bounds.Bottom - 2 : -1;
+            if (y >= 0) using (var br = new SolidBrush(Accent)) g.FillRectangle(br, e.Bounds.X + 4, y - 1, e.Bounds.Width - 8, 3);
+        }
     }
 
     static GraphicsPath RoundRect(Rectangle r, int d)

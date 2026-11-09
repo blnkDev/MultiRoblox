@@ -2,6 +2,15 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [1.1.0] - 2026-11-09
+
+### Added
+- Reorder accounts by dragging them, or with `Alt`+`Up`/`Down` (moves all selected). The order is saved.
+- Update notice: checks the latest GitHub release on startup and every 6 hours and shows an **Update** button in the title bar. Tray menu: "Check for updates now" and "Check for updates automatically" (on by default). Nothing is downloaded or installed automatically.
+
+### Fixed
+- The window no longer shows a classic Windows title bar over the custom one when it loses focus.
+
 ## [1.0.0] - 2026-11-08
 
 First public release.
@@ -19,4 +28,5 @@ First public release.
 - Dark UI with custom title bar, custom icon and system tray.
 - Development options: `--demo`, `--selftest`, `--logintest`, `--makeico`.
 
+[1.1.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.1.0
 [1.0.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.0.0

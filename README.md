@@ -24,11 +24,13 @@
 - **No stored passwords:** you sign in through your **default browser** (Firefox, Edge, Chrome, Brave or Vivaldi), with the normal captcha and 2FA. The program only keeps the session cookie, **encrypted** for your Windows user.
 - **Launch many at once:** select the accounts and click Play. It opens them one by one, confirms each client actually started, and flags the ones that failed.
 - **Nicknames** for every account (double-click).
+- **Reorder accounts:** drag and drop, or `Alt`+`↑`/`↓` (moves all selected). The order is saved and also used when tiling windows.
 - **Game by Place ID:** shows the name, icon and live player count. Favorite games with the star ☆ and switch between them in one click.
 - **Follow user:** join the server of a friend or of another account of yours.
 - **Online status:** see whether each account is offline, on the website, or in a game (and which one).
 - **Tile windows:** arrange all clients side by side in a grid.
 - **Login check on startup:** accounts whose login expired are marked in red.
+- **Update notice:** checks GitHub for a newer release (on startup and every 6 hours) and shows an **Update** button in the title bar that opens the release page. It never downloads or installs anything by itself. You can turn it off in the tray menu.
 - **Custom UI:** dark theme, custom title bar, system tray icon.
 
 ## Installation
@@ -51,7 +53,7 @@
 ## Security and privacy
 
 - **No password is stored.** Only each account's `.ROBLOSECURITY` cookie, in `%APPDATA%\MultiRoblox\accounts.dat`, encrypted with the **Windows DPAPI** (only your user, on this PC, can read it).
-- **No telemetry and no server of its own.** The program only talks to `*.roblox.com` and Roblox's image CDN. The cookie is only ever sent to `roblox.com`.
+- **No telemetry and no server of its own.** The program only talks to `*.roblox.com`, Roblox's image CDN and, for the optional update check, `api.github.com` (no account data is sent; GitHub sees your IP address like in any web request). The cookie is only ever sent to `roblox.com`.
 - Sign-in uses a **temporary, empty browser profile** that is deleted afterwards. Your own browser data, tabs and saved passwords are never touched.
 - ⚠️ **Anyone who has the cookie can enter the account without the password or 2FA.** Never share `accounts.dat` or the `%APPDATA%\MultiRoblox` folder.
 - All the source code is in this repository: you can read it, build it and compare.
