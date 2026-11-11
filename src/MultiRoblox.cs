@@ -120,36 +120,79 @@ static class Store
 
     public static void Log(string line)
     {
-        try { Directory.CreateDirectory(Dir); if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1048576) File.Delete(LogPath); File.AppendAllText(LogPath, DateTime.Now.ToString("HH:mm:ss ") + line + Environment.NewLine); } catch (Exception) { }
+        try
+        {
+            Directory.CreateDirectory(Dir);
+            if (File.Exists(LogPath) && new FileInfo(LogPath).Length > 1048576)
+            {
+                string old = Path.Combine(Dir, "log-old.txt");   // the previous megabyte is kept instead of lost
+                try { File.Delete(old); } catch (Exception) { }
+                File.Move(LogPath, old);
+            }
+            File.AppendAllText(LogPath, DateTime.Now.ToString("HH:mm:ss ") + line + Environment.NewLine);
+        }
+        catch (Exception) { }
+    }
+
+    static string BakPath { get { return FilePath + ".bak"; } }
+    public static string LoadWarning;   // set when the accounts file could not be read at startup
+
+    // The two pure halves of the file format, kept separate so the self-test can prove a save can always be read back.
+    public static string Serialize(List<Account> list) { return string.Join("\n", list.Select(a => a.Id + "\t" + Field(a.Name) + "\t" + Field(a.Cookie) + "\t" + Field(a.Nick)).ToArray()); }
+    static string Field(string v) { return (v ?? "").Replace("\t", "").Replace("\r", "").Replace("\n", ""); }   // tab and newline are the separators
+    public static List<Account> Parse(string text)
+    {
+        var list = new List<Account>();
+        foreach (string line in text.Split('\n'))
+        {
+            string[] p = line.Trim().Split('\t');
+            long id;
+            if (p.Length >= 3 && long.TryParse(p[0], out id)) list.Add(new Account { Id = id, Name = p[1], Cookie = p[2], Nick = p.Length > 3 ? p[3] : "" });
+        }
+        return list;
+    }
+
+    static List<Account> TryRead(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            return Parse(Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(path), Entropy, DataProtectionScope.CurrentUser)));
+        }
+        catch (Exception) { return null; }   // another user/PC, or a corrupted file
     }
 
     public static List<Account> Load()
     {
-        var list = new List<Account>();
-        try
+        var list = TryRead(FilePath);
+        if (list != null) return list;
+        if (!File.Exists(FilePath)) return new List<Account>();
+        // The file exists but cannot be read. Move it aside FIRST, so no later save can ever overwrite the evidence.
+        try { File.Move(FilePath, FilePath + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss")); } catch (Exception) { }
+        var bak = TryRead(BakPath);
+        if (bak != null && bak.Count > 0)
         {
-            if (!File.Exists(FilePath)) return list;
-            string text = Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(FilePath), Entropy, DataProtectionScope.CurrentUser));
-            foreach (string line in text.Split('\n'))
-            {
-                string[] p = line.Trim().Split('\t');
-                long id;
-                if (p.Length >= 3 && long.TryParse(p[0], out id)) list.Add(new Account { Id = id, Name = p[1], Cookie = p[2], Nick = p.Length > 3 ? p[3] : "" });
-            }
+            LoadWarning = "Your accounts file was unreadable, so the previous backup was loaded. The broken file was kept next to it.";
+            Log("accounts.dat unreadable: restored " + bak.Count + " account(s) from accounts.dat.bak");
+            return bak;
         }
-        catch (Exception) { }   // file from another user/PC or corrupted: start empty (the old file is not overwritten until a save)
-        return list;
+        LoadWarning = "Your accounts file could not be read. It was kept as accounts.dat.broken-... in the data folder.";
+        Log("accounts.dat unreadable and no usable backup: starting empty");
+        return new List<Account>();
     }
 
     public static void Save(List<Account> list)
     {
         if (ReadOnly) return;
-        Directory.CreateDirectory(Dir);
-        string text = string.Join("\n", list.Select(a => a.Id + "\t" + a.Name + "\t" + a.Cookie + "\t" + a.Nick).ToArray());
-        string tmp = FilePath + ".tmp";
-        File.WriteAllBytes(tmp, ProtectedData.Protect(Encoding.UTF8.GetBytes(text), Entropy, DataProtectionScope.CurrentUser));
-        File.Copy(tmp, FilePath, true);
-        File.Delete(tmp);
+        try
+        {
+            Directory.CreateDirectory(Dir);
+            string tmp = FilePath + ".tmp";
+            File.WriteAllBytes(tmp, ProtectedData.Protect(Encoding.UTF8.GetBytes(Serialize(list)), Entropy, DataProtectionScope.CurrentUser));
+            if (File.Exists(FilePath)) File.Replace(tmp, FilePath, BakPath);   // atomic swap; the previous file becomes the backup
+            else File.Move(tmp, FilePath);
+        }
+        catch (Exception ex) { Log("Save error: " + ex.Message); }   // a failed save must never crash the UI; the log tells the story
     }
 }
 
@@ -157,6 +200,9 @@ static class Roblox
 {
     static readonly HttpClient Http = new HttpClient(new HttpClientHandler { UseCookies = false });
     static readonly JavaScriptSerializer Js = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+    static readonly Random Rng = new Random();
+
+    static Roblox() { Http.Timeout = TimeSpan.FromSeconds(20); }   // the default is 100 s: far too long for a UI that says "checking..."
 
     static HttpRequestMessage Req(HttpMethod m, string url, string cookie)
     {
@@ -167,7 +213,12 @@ static class Roblox
         return r;
     }
 
-    public static Dictionary<string, object> Obj(string json) { return Js.DeserializeObject(json) as Dictionary<string, object>; }
+    // Tolerant parse: null, empty or malformed JSON all come back as null instead of throwing.
+    public static Dictionary<string, object> Obj(string json)
+    {
+        try { return json == null ? null : Js.DeserializeObject(json) as Dictionary<string, object>; }
+        catch (Exception) { return null; }
+    }
 
     // Returns (id, name) if the cookie is valid, otherwise null.
     public static async Task<Account> Whoami(string cookie)
@@ -198,7 +249,13 @@ static class Roblox
     {
         var r = new HttpRequestMessage(HttpMethod.Get, url);
         r.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36");
-        using (var resp = await Http.SendAsync(r)) return resp.IsSuccessStatusCode ? await resp.Content.ReadAsStringAsync() : null;
+        using (var resp = await Http.SendAsync(r))
+        {
+            if (resp.IsSuccessStatusCode) return await resp.Content.ReadAsStringAsync();
+            int c = (int)resp.StatusCode;
+            if (c == 429 || c >= 500) throw new HttpRequestException("HTTP " + c);   // temporary failure: must not look like "not found"
+            return null;   // plain 4xx: what was asked for does not exist
+        }
     }
 
     // Game name, player count and icon (public APIs, no cookie).
@@ -207,9 +264,11 @@ static class Roblox
         try
         {
             var u = Obj(await GetPublic("https://apis.roblox.com/universes/v1/places/" + placeId + "/universe"));
-            if (u == null || u["universeId"] == null) return null;
-            object uid = u["universeId"];
-            var d = Obj(await GetPublic("https://games.roblox.com/v1/games?universeIds=" + uid))["data"] as object[];
+            object uid;
+            if (u == null || !u.TryGetValue("universeId", out uid) || uid == null) return null;   // the API answers 200 with a null universeId for unknown places
+            var o2 = Obj(await GetPublic("https://games.roblox.com/v1/games?universeIds=" + uid));
+            object dataObj;
+            var d = o2 != null && o2.TryGetValue("data", out dataObj) ? dataObj as object[] : null;
             if (d == null || d.Length == 0) return null;
             var row = (Dictionary<string, object>)d[0];
             var info = new GameInfo { Name = (string)row["name"], Playing = Convert.ToInt64(row["playing"]) };
@@ -282,7 +341,9 @@ static class Roblox
         try
         {
             string ids = string.Join(",", accts.Select(a => a.Id.ToString()).ToArray());
-            var d = Obj(await GetPublic("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" + ids + "&size=150x150&format=Png&isCircular=true"))["data"] as object[];
+            var o = Obj(await GetPublic("https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=" + ids + "&size=150x150&format=Png&isCircular=true"));
+            object dataObj;
+            var d = o != null && o.TryGetValue("data", out dataObj) ? dataObj as object[] : null;
             if (d == null) return;
             foreach (Dictionary<string, object> row in d)
             {
@@ -342,7 +403,9 @@ static class Roblox
         if (!System.Text.RegularExpressions.Regex.IsMatch(nameOrId, "^[A-Za-z0-9_]{3,20}$")) return 0;   // valid username format: also prevents injecting into the JSON
         try
         {
-            var d = Obj(await PostJson("https://users.roblox.com/v1/usernames/users", null, "{\"usernames\":[\"" + nameOrId + "\"],\"excludeBannedUsers\":true}"))["data"] as object[];
+            var o = Obj(await PostJson("https://users.roblox.com/v1/usernames/users", null, "{\"usernames\":[\"" + nameOrId + "\"],\"excludeBannedUsers\":true}"));
+            object dataObj;
+            var d = o != null && o.TryGetValue("data", out dataObj) ? dataObj as object[] : null;
             return d != null && d.Length > 0 ? Convert.ToInt64(((Dictionary<string, object>)d[0])["id"]) : 0;
         }
         catch (Exception ex) { Store.Log("UserId error: " + ex.Message); return 0; }
@@ -406,7 +469,7 @@ static class Roblox
 
     public static void Launch(string ticket, long placeId, long followUserId = 0)
     {
-        long tracker = 100000000000L + (long)(new Random().NextDouble() * 899999999999L);
+        long tracker = 100000000000L + (long)(Rng.NextDouble() * 899999999999L);
         long now = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds;
         string url = followUserId > 0
             ? "https://assetgame.roblox.com/game/PlaceLauncher.ashx?request=RequestFollowUser&userId=" + followUserId
@@ -790,6 +853,7 @@ class MainForm : Form
         Muted = Color.FromArgb(150, 150, 165), Red = Color.FromArgb(240, 90, 90);
     static readonly Font FAvatar = new Font("Segoe UI Semibold", 12f), FName = new Font("Segoe UI Semibold", 11f),
         FSub = new Font("Segoe UI", 8.5f), FNote = new Font("Segoe UI", 9f);
+    static readonly Icon AppIcon = Icon.FromHandle(Logo(32).GetHicon());   // one icon handle for the window and every dialog
 
     readonly Mutex mutex = new Mutex(false, "ROBLOX_singletonMutex");
     readonly EventWaitHandle ev = new EventWaitHandle(false, EventResetMode.ManualReset, "ROBLOX_singletonEvent");
@@ -843,6 +907,15 @@ class MainForm : Form
             if (!first) { MessageBox.Show("MultiRoblox is already running (look for it in the taskbar or the system tray).", "MultiRoblox"); return 0; }
             System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;   // TLS 1.2: Roblox rejects the .NET 4 default
             Application.EnableVisualStyles();
+            // Last line of defense: an unexpected error is logged and shown in the status line instead of closing the program.
+            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+            Application.ThreadException += (o, e) =>
+            {
+                Store.Log("Unexpected error: " + e.Exception);
+                var f = Application.OpenForms.OfType<MainForm>().FirstOrDefault();
+                if (f != null) f.Say("Something went wrong (" + e.Exception.Message + "). Click Open log for details.", true);
+            };
+            AppDomain.CurrentDomain.UnhandledException += (o, e) => Store.Log("Fatal error: " + e.ExceptionObject);
             if (!Demo && !Unlock()) return 0;   // password lock (optional)
             Application.Run(new MainForm());
         }
@@ -871,6 +944,14 @@ class MainForm : Form
             if (!Roblox.CloseClient(ping.Id, "PING") || !ping.WaitForExit(3000)) return 14;   // right name: closed
         }
         finally { try { if (!ping.HasExited) ping.Kill(); } catch (Exception) { } }
+        var accts = new List<Account> { new Account { Id = 7, Name = "user one", Cookie = "c1", Nick = "Nick 1" }, new Account { Id = 8, Name = "u2", Cookie = "c2" } };
+        var rt = Store.Parse(Store.Serialize(accts));
+        if (rt.Count != 2 || rt[0].Id != 7 || rt[0].Name != "user one" || rt[0].Cookie != "c1" || rt[0].Nick != "Nick 1" || rt[1].Nick != "") return 16;
+        var old3 = Store.Parse("9\tn\tc");   // a file written by 1.0.x has three fields per line
+        if (old3.Count != 1 || old3[0].Nick != "") return 17;
+        if (Store.Parse(Store.Serialize(new List<Account> { new Account { Id = 5, Name = "a\tb", Cookie = "x\ny", Nick = "n\r" } })).Single().Cookie != "xy") return 20;
+        if (Store.Parse("").Count != 0 || Store.Parse("garbage line").Count != 0) return 18;
+        if (Roblox.Obj(null) != null || Roblox.Obj("not json at all") != null || Roblox.Obj("{\"a\":1}") == null) return 19;
         if (!Roblox.IsRbxCdn("https://tr.rbxcdn.com/abc/150/150/x/Png") || Roblox.IsRbxCdn("http://tr.rbxcdn.com/a") || Roblox.IsRbxCdn("https://tr.rbxcdn.com.evil.com/a")
             || Roblox.IsRbxCdn("https://evil.com/tr.rbxcdn.com") || Roblox.IsRbxCdn("not a url") || Roblox.IsRbxCdn(null)) return 15;
         var area = new Rectangle(0, 40, 1920, 1000);
@@ -1026,7 +1107,7 @@ class MainForm : Form
         FormBorderStyle = FormBorderStyle.None;
         ClientSize = new Size(562, 578);   // 560 of content + 1 px border on each side; 36 for the bar + 540 for the body
         MinimumSize = new Size(562, 578);
-        Icon = Icon.FromHandle(Logo(32).GetHicon());
+        Icon = AppIcon;
         BackColor = Color.FromArgb(52, 52, 64);   // the form background color becomes the 1 px border
         StartPosition = FormStartPosition.CenterScreen;
 
@@ -1161,7 +1242,7 @@ class MainForm : Form
         FormClosed += delegate
         {
             tray.Visible = false; timer.Stop(); if (cts != null) cts.Cancel();
-            if (owned) mutex.ReleaseMutex();
+            try { if (owned) mutex.ReleaseMutex(); } catch (Exception) { }   // closing must never fail
             mutex.Dispose(); ev.Dispose();
         };
 
@@ -1169,6 +1250,7 @@ class MainForm : Form
         timer.Interval = 1000; timer.Tick += delegate { Tick(); }; timer.Start();
         Tick();
         if (accounts.Count == 0) Say("Click \"+ Add account\" to get started.");
+        if (Store.LoadWarning != null) Say(Store.LoadWarning, true);
         LookupGame();
         SyncFavUi();
         if (!Demo) ValidateAll();   // demo: no network to validate fake accounts
@@ -1221,7 +1303,7 @@ class MainForm : Form
     }
 
     void Restore() { if (!Visible && Store.HasPassword() && !Unlock()) return; Show(); WindowState = FormWindowState.Normal; Activate(); }   // a hidden window (only "Lock now" hides it) means locked
-    void Say(string s, bool bad = false) { msg.Text = s; msg.ForeColor = bad ? Red : Muted; }
+    void Say(string s, bool bad = false) { if (IsDisposed) return; msg.Text = s; msg.ForeColor = bad ? Red : Muted; }
 
     // Moves the item at 'from' so it ends up before the item that was at insertion index 'to' (0..Count).
     static void MoveItem<T>(List<T> l, int from, int to)
@@ -1325,7 +1407,7 @@ class MainForm : Form
         else
         {
             using (var br = new SolidBrush(Accent)) g.FillEllipse(br, dot);
-            TextRenderer.DrawText(g, a.Shown.Substring(0, 1).ToUpper(), FAvatar, dot, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(g, a.Shown.Length > 0 ? a.Shown.Substring(0, 1).ToUpper() : "?", FAvatar, dot, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         // status dot on the avatar: green = in game, blue = online, orange = Studio, gray = offline, none = not checked yet
         Color sc = a.PresType == 2 ? Green : a.PresType == 1 ? Accent : a.PresType == 3 ? Orange : a.PresType == 0 ? Color.FromArgb(110, 110, 125) : Color.Empty;
@@ -1380,7 +1462,7 @@ class MainForm : Form
         tray.Text = "MultiRoblox - " + (shown ? "ON" : "WAITING") + " (" + n + ")";
     }
 
-    void SetBusy(bool b) { busy = b; btnAdd.Enabled = btnNick.Enabled = btnRemove.Enabled = btnPlay.Enabled = btnFollow.Enabled = !b; }
+    void SetBusy(bool b) { if (IsDisposed) return; busy = b; btnAdd.Enabled = btnNick.Enabled = btnRemove.Enabled = btnPlay.Enabled = btnFollow.Enabled = !b; }
 
     async void AddAccount()
     {
@@ -1390,6 +1472,7 @@ class MainForm : Form
         try
         {
             Account a = await Roblox.BrowserLogin(cts.Token, s => Say(s));
+            if (IsDisposed) return;
             if (a == null) { Say("Login cancelled."); return; }
             accounts.RemoveAll(x => x.Id == a.Id);   // same account again = just refresh the cookie
             accounts.Add(a);
@@ -1409,7 +1492,7 @@ class MainForm : Form
         if (!long.TryParse(place.Text.Trim(), out id) || id <= 0) { SetGame(null, "Enter the Place ID (numbers only)"); return; }
         SetGame(null, "Looking up game...");
         Roblox.GameInfo g = await Roblox.Game(id);
-        if (ver != lookupVer) return;   // a stale reply for an old ID is discarded
+        if (IsDisposed || ver != lookupVer) return;   // a stale reply for an old ID is discarded
         if (g != null && g.Failed) { SetGame(null, "Could not reach Roblox - check your connection"); lastGameId = 0; lastGameName = ""; return; }
         SetGame(g, "Game not found - check the ID");
         lastGameId = g != null ? id : 0; lastGameName = g != null ? Clean(g.Name) : "";
@@ -1540,6 +1623,7 @@ class MainForm : Form
                 var a = sel[i];
                 a.Note = "opening..."; list.Invalidate();
                 var tk = await Roblox.Ticket(a.Cookie);
+                if (IsDisposed) return;
                 if (tk.Ticket == null) { a.Note = TicketNote(tk); Store.Log("no login ticket for " + a.Name + ": " + a.Note); list.Invalidate(); continue; }
                 string ticket = tk.Ticket;
                 var before = Roblox.ClientPids();
@@ -1547,11 +1631,12 @@ class MainForm : Form
                 catch (Exception ex) { a.Note = "! could not start Roblox"; Store.Log("could not start Roblox for " + a.Name + ": " + ex.Message); list.Invalidate(); continue; }
                 Store.Log("launch sent to " + a.Name + (followId > 0 ? " following " + followId : " place " + placeId));
                 int pid = 0;
-                for (int w = 0; w < 90 && pid == 0; w++)   // wait up to ~45 s for the client to appear
+                for (int w = 0; w < 90 && pid == 0 && !IsDisposed; w++)   // wait up to ~45 s for the client to appear
                 {
                     await Task.Delay(500);
                     pid = Roblox.ClientPids().Except(before).FirstOrDefault();
                 }
+                if (IsDisposed) return;
                 if (pid == 0) { a.Note = "! Roblox did not open"; Store.Log("no new RobloxPlayerBeta for " + a.Name); list.Invalidate(); continue; }
                 a.Pid = pid; a.Note = "open"; opened++; list.Invalidate();
                 if (i < sel.Count - 1) await Task.Delay(4000);   // gap between clients: avoids Roblox's rate limit
@@ -1594,6 +1679,7 @@ class MainForm : Form
         {
             int pid = a.Pid;
             if (await Task.Run(() => Roblox.CloseClient(pid, "RobloxPlayerBeta"))) closed++;
+            if (IsDisposed) return;
             a.Pid = 0; if (a.Note == "open") a.Note = "";
         }
         list.Invalidate();
@@ -1605,7 +1691,7 @@ class MainForm : Form
     static string AskPassword(string title, string label, bool confirm, string error = null)
     {
         using (var f = new Form { Text = title, ClientSize = new Size(340, confirm ? 228 : 160), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen,
-            MaximizeBox = false, MinimizeBox = false, TopMost = true, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f), Icon = Icon.FromHandle(Logo(32).GetHicon()) })
+            MaximizeBox = false, MinimizeBox = false, TopMost = true, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f), Icon = AppIcon })
         {
             DarkTitle(f);
             var l = new Label { Text = label, Size = new Size(308, confirm ? 72 : 36), Location = new Point(16, 12), ForeColor = Muted };

@@ -2,6 +2,19 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Accounts are never lost to a bad file: saving is atomic and keeps the previous file as `accounts.dat.bak`; an unreadable `accounts.dat` is kept aside as `accounts.dat.broken-<date>`, the backup is restored when possible, and the app tells you.
+- A failed save no longer crashes the program (it is written to the log).
+- An unexpected error no longer closes the program: it is written to the log and shown in the status line.
+- Tabs or line breaks in a name or cookie can no longer corrupt the accounts file.
+- Closing the program can no longer fail while releasing the multi-client lock.
+- Network calls time out after 20 seconds instead of 100, and a Roblox outage or rate limit (HTTP 429/5xx) is no longer reported as "game not found" or "user not found".
+- Unexpected or empty replies from Roblox no longer break the game lookup, avatars or Follow user.
+- Closing the window while an account is being added or launched no longer causes errors.
+- `log.txt` keeps the previous megabyte as `log-old.txt` instead of deleting it.
+
 ## [1.2.0] - 2026-11-09
 
 ### Added
