@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [1.2.1] - 2026-11-10
 
 ### Fixed
 - Accounts are never lost to a bad file: saving is atomic and keeps the previous file as `accounts.dat.bak`; an unreadable `accounts.dat` is kept aside as `accounts.dat.broken-<date>`, the backup is restored when possible, and the app tells you.
@@ -57,6 +57,7 @@ First public release.
 - Dark UI with custom title bar, custom icon and system tray.
 - Development options: `--demo`, `--selftest`, `--logintest`, `--makeico`.
 
+[1.2.1]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.2.1
 [1.2.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.2.0
 [1.1.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.1.0
 [1.0.0]: https://github.com/blnkDev/MultiRoblox/releases/tag/v1.0.0

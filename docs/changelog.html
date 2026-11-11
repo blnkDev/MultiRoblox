@@ -52,7 +52,24 @@
     <div class="wrap">
       <div data-releases>
     <div class="release">
-      <div class="release-head"><h2>v1.2.0</h2><span class="chip on">Latest</span><span class="release-date">Nov 9, 2026</span></div>
+      <div class="release-head"><h2>v1.2.1</h2><span class="chip on">Latest</span><span class="release-date">Nov 10, 2026</span></div>
+      <div class="panel notes">
+        <h4>Fixed</h4>
+        <ul>
+          <li>Accounts are never lost to a bad file: saving is atomic and keeps the previous file as <code>accounts.dat.bak</code>; an unreadable <code>accounts.dat</code> is kept aside as <code>accounts.dat.broken-&lt;date&gt;</code>, the backup is restored when possible, and the app tells you.</li>
+          <li>A failed save no longer crashes the program (it is written to the log).</li>
+          <li>An unexpected error no longer closes the program: it is written to the log and shown in the status line.</li>
+          <li>Tabs or line breaks in a name or cookie can no longer corrupt the accounts file.</li>
+          <li>Closing the program can no longer fail while releasing the multi-client lock.</li>
+          <li>Network calls time out after 20 seconds instead of 100, and a Roblox outage or rate limit is no longer reported as "game not found" or "user not found".</li>
+          <li>Unexpected or empty replies from Roblox no longer break the game lookup, avatars or Follow user.</li>
+          <li>Closing the window while an account is being added or launched no longer causes errors.</li>
+          <li><code>log.txt</code> keeps the previous megabyte as <code>log-old.txt</code> instead of deleting it.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="release">
+      <div class="release-head"><h2>v1.2.0</h2><span class="release-date">Nov 9, 2026</span></div>
       <div class="panel notes">
         <h4>Added</h4>
         <ul>
