@@ -24,6 +24,8 @@ using Microsoft.Win32;
 class Account
 {
     public long Id; public string Name; public string Cookie; public string Nick = ""; public string Note = ""; public int Pid; public int PresType = -1; public string Presence = ""; public Image Avatar;   // Avatar: profile picture, never saved in accounts.dat
+    public DateTime Opened; public string AgeShown;   // when MultiRoblox opened this account's client (for "open 1h 05m")
+    public float Hot, Sel;   // row hover / selection, 0..1 (animated)
     public string Shown { get { return Nick.Length > 0 ? Nick : Name; } }
 }
 
@@ -98,6 +100,35 @@ static class Store
     {
         if (ReadOnly) return;
         try { Directory.CreateDirectory(Dir); if (on) File.Delete(UpdateOffFile); else File.WriteAllText(UpdateOffFile, "update checks are off; delete this file to turn them on"); }
+        catch (Exception) { }
+    }
+
+    // settings.txt: one "key=value" per line (appearance, window position).
+    static string SettingsFile { get { return Path.Combine(Dir, "settings.txt"); } }
+    public static string Setting(string key, string def)
+    {
+        try
+        {
+            foreach (string line in File.ReadAllLines(SettingsFile))
+            {
+                int i = line.IndexOf('=');
+                if (i > 0 && line.Substring(0, i).Trim() == key) return line.Substring(i + 1).Trim();
+            }
+        }
+        catch (Exception) { }
+        return def;
+    }
+
+    public static void SetSetting(string key, string value)
+    {
+        if (ReadOnly) return;
+        try
+        {
+            var lines = File.Exists(SettingsFile) ? File.ReadAllLines(SettingsFile).Where(l => !l.StartsWith(key + "=")).ToList() : new List<string>();
+            lines.Add(key + "=" + value);
+            Directory.CreateDirectory(Dir);
+            File.WriteAllLines(SettingsFile, lines.ToArray());
+        }
         catch (Exception) { }
     }
 
@@ -518,7 +549,8 @@ static class Roblox
 
     static string PickBrowser(out string kind)
     {
-        string exe = DefaultBrowser();
+        string exe = Environment.GetEnvironmentVariable("MULTIROBLOX_BROWSER");   // testing: force a browser
+        if (exe == null || !File.Exists(exe)) exe = DefaultBrowser();
         kind = exe != null ? Kind(exe) : null;
         if (kind != null) return exe;
         exe = FindBrowser();   // unknown/incompatible default: Edge or Chrome
@@ -629,6 +661,98 @@ static class Roblox
             for (int i = 0; i < 6; i++) { try { if (Directory.Exists(profile)) Directory.Delete(profile, true); return; } catch (Exception) { } await Task.Delay(4000); }
         });
         return found;
+    }
+
+    // Opens roblox.com/home already signed in as 'a': a temporary browser profile gets the account's cookie through the debug port
+    // before any page loads. The profile (which holds the cookie) is deleted once that browser is closed.
+    public static async Task<bool> OpenInBrowser(Account a, Action<string> say)
+    {
+        string kind;
+        string exe = PickBrowser(out kind);
+        if (exe == null) { say("No compatible browser found (Firefox, Edge, Chrome, Brave or Vivaldi)."); return false; }
+        bool ff = kind == "firefox";
+        string profile = Path.Combine(Path.GetTempPath(), "mrb_web_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(profile);
+        var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0); l.Start();
+        int port = ((System.Net.IPEndPoint)l.LocalEndpoint).Port; l.Stop();
+        const string Home = "https://www.roblox.com/home";
+        bool ok = false;
+        try
+        {
+            string args = ff
+                ? "-no-remote -new-instance -profile \"" + profile + "\" --remote-debugging-port=" + port + " about:blank"
+                : "--user-data-dir=\"" + profile + "\" --remote-debugging-port=" + port + " --remote-allow-origins=* --no-first-run --no-default-browser-check --new-window about:blank";
+            Store.Log("open in browser (" + kind + ") for " + a.Name);
+            Process.Start(exe, args);
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(40)))
+            {
+                var ct = cts.Token;
+                string wsUrl = null;
+                for (int i = 0; i < 60 && wsUrl == null; i++) { wsUrl = await DebugUrl(kind, port); if (wsUrl == null) await Task.Delay(500, ct); }
+                if (wsUrl == null) { say("Could not talk to the browser (the debug port did not open). See Open log."); Store.Log("open in browser: no debug port"); return false; }
+                using (var ws = new ClientWebSocket())
+                {
+                    await ws.ConnectAsync(new Uri(wsUrl), ct);
+                    string value = Js.Serialize(a.Cookie);   // JSON string, quotes included
+                    long expiry = (long)(DateTime.UtcNow.AddYears(1) - new DateTime(1970, 1, 1)).TotalSeconds;
+                    string set, go;
+                    if (ff)
+                    {
+                        await Cdp(ws, 1, "session.new", ct, ",\"params\":{\"capabilities\":{}}");
+                        set = await Cdp(ws, 2, "storage.setCookie", ct, ",\"params\":{\"cookie\":{\"name\":\".ROBLOSECURITY\",\"value\":{\"type\":\"string\",\"value\":" + value
+                            + "},\"domain\":\".roblox.com\",\"path\":\"/\",\"httpOnly\":true,\"secure\":true,\"sameSite\":\"lax\",\"expiry\":" + expiry + "}}");
+                        string tree = await Cdp(ws, 3, "browsingContext.getTree", ct, ",\"params\":{}");
+                        var m = System.Text.RegularExpressions.Regex.Match(tree ?? "", "\"context\":\"([^\"]+)\"");
+                        go = m.Success ? await Cdp(ws, 4, "browsingContext.navigate", ct, ",\"params\":{\"context\":\"" + m.Groups[1].Value + "\",\"url\":\"" + Home + "\",\"wait\":\"interactive\"}") : null;   // wait for the page: ending the session earlier cancels the navigation
+                        try { await Cdp(ws, 5, "session.end", ct, ",\"params\":{}"); } catch (Exception) { }
+                    }
+                    else
+                    {
+                        set = await Cdp(ws, 1, "Storage.setCookies", ct, ",\"params\":{\"cookies\":[{\"name\":\".ROBLOSECURITY\",\"value\":" + value
+                            + ",\"domain\":\".roblox.com\",\"path\":\"/\",\"httpOnly\":true,\"secure\":true,\"sameSite\":\"Lax\",\"expires\":" + expiry + "}]}");
+                        string targets = await Cdp(ws, 2, "Target.getTargets", ct);
+                        var blank = System.Text.RegularExpressions.Regex.Match(targets ?? "", "\"targetId\":\"([^\"]+)\",\"type\":\"page\"");
+                        go = await Cdp(ws, 3, "Target.createTarget", ct, ",\"params\":{\"url\":\"" + Home + "\"}");
+                        if (blank.Success) try { await Cdp(ws, 4, "Target.closeTarget", ct, ",\"params\":{\"targetId\":\"" + blank.Groups[1].Value + "\"}"); } catch (Exception) { }   // the empty first tab
+                    }
+                    ok = set != null && !set.Contains("\"error\"") && go != null && !go.Contains("\"error\"");
+                    if (!ok) { Store.Log("open in browser failed: set=" + Short(set) + " go=" + Short(go)); say("The browser did not accept the login. See Open log."); }
+                }
+            }
+        }
+        catch (Exception ex) { Store.Log("OpenInBrowser error: " + ex.Message); say("Could not open the browser: " + ex.Message); }
+        if (!ok) KillByProfile(profile);
+        var _ = Task.Run(async delegate   // wait for that browser to be closed, then delete its profile (it holds the cookie)
+        {
+            await Task.Delay(5000);
+            while (ProfileInUse(profile)) await Task.Delay(15000);
+            for (int i = 0; i < 6; i++) { try { if (Directory.Exists(profile)) Directory.Delete(profile, true); return; } catch (Exception) { } await Task.Delay(4000); }
+        });
+        return ok;
+    }
+
+    static string Short(string s) { return s == null ? "null" : s.Substring(0, Math.Min(160, s.Length)); }
+
+    static bool ProfileInUse(string profile)
+    {
+        try
+        {
+            using (var q = new System.Management.ManagementObjectSearcher("SELECT ProcessId FROM Win32_Process WHERE CommandLine LIKE '%" + Path.GetFileName(profile) + "%'"))
+                return q.Get().Count > 0;
+        }
+        catch (Exception) { return false; }
+    }
+
+    // Temporary browser profiles left behind (MultiRoblox closed before the browser, a crash...): deleted at startup, unless still in use.
+    public static void CleanTempProfiles()
+    {
+        try
+        {
+            foreach (string d in Directory.GetDirectories(Path.GetTempPath(), "mrb_*"))
+                if ((Path.GetFileName(d).StartsWith("mrb_web_") || Path.GetFileName(d).StartsWith("mrb_login_")) && !ProfileInUse(d))
+                    try { Directory.Delete(d, true); } catch (Exception) { }
+        }
+        catch (Exception) { }
     }
 
     // Closes only processes whose command line contains the UNIQUE temporary profile name (mrb_login_<guid>): never the user's own.
@@ -757,11 +881,248 @@ static class Native
     public static Point LParamPoint(IntPtr lp) { long v = lp.ToInt64(); return new Point((short)(v & 0xFFFF), (short)((v >> 16) & 0xFFFF)); }
 }
 
+// Look and feel: screen scale, theme colors, the Mica-style backdrop and the appearance settings.
+static class Ui
+{
+    [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+
+    public static readonly float K;   // screen scale: 1 = 100 %, 1.5 = 150 %
+    public static bool Light, Animations, Mica;
+    public static int AccentIndex;
+    public static readonly string[] AccentNames = { "Indigo", "Blue", "Teal", "Green", "Pink", "Orange", "Red", "Violet" };
+    static readonly Color[] AccentColors = { Color.FromArgb(99, 102, 241), Color.FromArgb(59, 130, 246), Color.FromArgb(13, 148, 136), Color.FromArgb(22, 163, 74),
+        Color.FromArgb(219, 39, 119), Color.FromArgb(234, 88, 12), Color.FromArgb(220, 38, 38), Color.FromArgb(139, 92, 246) };
+    public static Color Bg, Card, CardHot, CardSel, Text, Muted, Bar, Border, Accent, Green, Orange, Red;
+
+    static Ui()
+    {
+        try { SetProcessDPIAware(); } catch (Exception) { }   // sharp text at 125 % / 150 % instead of a stretched bitmap; must run before any window exists
+        float k = 1f, o;
+        try { using (var g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f; } catch (Exception) { }
+        string env = Environment.GetEnvironmentVariable("MULTIROBLOX_SCALE");   // testing: pretend another screen scale
+        if (env != null && float.TryParse(env, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out o) && o >= 1f && o <= 3f) k = o;
+        K = k;
+        int ai;
+        Light = Store.Setting("theme", "dark") == "light";
+        AccentIndex = int.TryParse(Store.Setting("accent", "0"), out ai) && ai >= 0 && ai < AccentColors.Length ? ai : 0;
+        Animations = Store.Setting("animations", "on") != "off";
+        Mica = Store.Setting("mica", "off") == "on";
+        Apply();
+    }
+
+    public static Color AccentOf(int i) { return AccentColors[i]; }
+    public static int S(int v) { return (int)Math.Round(v * K); }
+    public static Font F(string name, float pt, FontStyle st = FontStyle.Regular) { return new Font(name, pt * 4f / 3f * K, st, GraphicsUnit.Pixel); }
+
+    public static Color Mix(Color a, Color b, float t)
+    {
+        t = Math.Max(0f, Math.Min(1f, t));
+        return Color.FromArgb((int)(a.A + (b.A - a.A) * t), (int)(a.R + (b.R - a.R) * t), (int)(a.G + (b.G - a.G) * t), (int)(a.B + (b.B - a.B) * t));
+    }
+
+    public static void Apply()
+    {
+        Accent = AccentColors[AccentIndex];
+        if (Light)
+        {
+            Bg = Color.FromArgb(243, 244, 248); Card = Color.White; Text = Color.FromArgb(24, 24, 32); Muted = Color.FromArgb(98, 98, 112);
+            Bar = Color.FromArgb(232, 233, 239); Border = Color.FromArgb(208, 209, 218);
+            Green = Color.FromArgb(21, 150, 70); Orange = Color.FromArgb(200, 110, 10); Red = Color.FromArgb(210, 40, 40);
+        }
+        else
+        {
+            Bg = Color.FromArgb(18, 18, 22); Card = Color.FromArgb(28, 28, 35); Text = Color.White; Muted = Color.FromArgb(150, 150, 165);
+            Bar = Color.FromArgb(24, 24, 30); Border = Color.FromArgb(52, 52, 64);
+            Green = Color.FromArgb(80, 220, 120); Orange = Color.FromArgb(255, 170, 60); Red = Color.FromArgb(240, 90, 90);
+        }
+        CardHot = Mix(Card, Text, Light ? 0.035f : 0.05f);
+        CardSel = Mix(Card, Accent, Light ? 0.15f : 0.24f);
+        ResetBackdrop();   // the tint follows the theme
+    }
+
+    public static void Save()
+    {
+        Store.SetSetting("theme", Light ? "light" : "dark");
+        Store.SetSetting("accent", AccentIndex.ToString());
+        Store.SetSetting("animations", Animations ? "on" : "off");
+        Store.SetSetting("mica", Mica ? "on" : "off");
+    }
+
+    // ---- Mica-style backdrop: the desktop wallpaper, blurred and tinted with the theme, aligned to the screen like Windows 11 Mica.
+    // Real Mica cannot be used: WinForms paints without alpha, so DWM would show every control as see-through.
+    static Bitmap backdrop;
+    static Rectangle backdropScreen;
+    static bool backdropFailed;
+
+    public static void ResetBackdrop() { if (backdrop != null) backdrop.Dispose(); backdrop = null; backdropFailed = false; }
+
+    static Bitmap Backdrop(Control c)
+    {
+        if (!Mica) return null;
+        var scr = Screen.FromControl(c).Bounds;
+        if (scr != backdropScreen) ResetBackdrop();
+        if (backdrop != null || backdropFailed) return backdrop;
+        backdropScreen = scr;
+        try { backdrop = MakeBackdrop(scr.Size); } catch (Exception ex) { Store.Log("Backdrop: " + ex.Message); }
+        backdropFailed = backdrop == null;
+        return backdrop;
+    }
+
+    static Bitmap MakeBackdrop(Size scr)
+    {
+        string[] paths = { Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), @"Microsoft\Windows\Themes\TranscodedWallpaper"),
+            Registry.GetValue(@"HKEY_CURRENT_USER\Control Panel\Desktop", "WallPaper", "") as string };
+        Image src = null;
+        foreach (string path in paths)
+            if (src == null && !string.IsNullOrEmpty(path) && File.Exists(path))
+                try { src = Image.FromStream(new MemoryStream(File.ReadAllBytes(path))); } catch (Exception) { }
+        if (src == null) return null;   // solid-color desktop: nothing to blur, the plain theme color is used
+        using (src)
+        {
+            float sa = (float)scr.Width / scr.Height, ia = (float)src.Width / src.Height;   // "fill": crop the picture to the screen's shape, like the desktop does
+            var crop = ia > sa ? new RectangleF((src.Width - src.Height * sa) / 2, 0, src.Height * sa, src.Height) : new RectangleF(0, (src.Height - src.Width / sa) / 2, src.Width, src.Width / sa);
+            int tw = 32, th = Math.Max(1, (int)(32 / sa));   // shrinking to 32 px wide is the blur
+            int bw = Math.Max(64, scr.Width / 8), bh = Math.Max(36, scr.Height / 8);
+            using (var tiny = new Bitmap(tw, th))
+            {
+                using (var g = Graphics.FromImage(tiny)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(src, new Rectangle(0, 0, tw, th), crop, GraphicsUnit.Pixel); }
+                var big = new Bitmap(bw, bh, PixelFormat.Format32bppRgb);
+                using (var g = Graphics.FromImage(big))
+                using (var wrap = new ImageAttributes())
+                {
+                    wrap.SetWrapMode(WrapMode.TileFlipXY);   // no dark fringe at the edges
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.DrawImage(tiny, new Rectangle(0, 0, bw, bh), 0, 0, tw, th, GraphicsUnit.Pixel, wrap);
+                    using (var tint = new SolidBrush(Color.FromArgb(Light ? 196 : 206, Bg))) g.FillRectangle(tint, 0, 0, bw, bh);
+                }
+                return big;
+            }
+        }
+    }
+
+    // Background of the main window's panels: the backdrop when it is on, otherwise the control's own color.
+    public static void PaintBack(Control c, Graphics g, Rectangle r)
+    {
+        var bd = c is EdgePanel || c is AccountList ? Backdrop(c) : null;
+        if (bd == null) { using (var b = new SolidBrush(c.BackColor)) g.FillRectangle(b, r); return; }
+        var o = c.PointToScreen(Point.Empty);
+        float sx = (float)bd.Width / backdropScreen.Width, sy = (float)bd.Height / backdropScreen.Height;
+        var st = g.Save();
+        g.InterpolationMode = InterpolationMode.Bilinear; g.PixelOffsetMode = PixelOffsetMode.Half;
+        using (var wrap = new ImageAttributes())
+        {
+            wrap.SetWrapMode(WrapMode.TileFlipXY);
+            g.DrawImage(bd, r, (o.X - backdropScreen.X + r.X) * sx, (o.Y - backdropScreen.Y + r.Y) * sy, r.Width * sx, r.Height * sy, GraphicsUnit.Pixel, wrap);
+        }
+        g.Restore(st);
+    }
+
+    // What is behind a control (its parent's background), for controls with rounded corners.
+    public static void PaintUnder(Control c, Graphics g)
+    {
+        if (c.Parent == null) return;
+        var st = g.Save();
+        g.TranslateTransform(-c.Left, -c.Top);
+        PaintBack(c.Parent, g, c.Bounds);
+        g.Restore(st);
+    }
+}
+
+// One clock for every animation. Each animated thing steps a little per tick and says when it is done.
+interface IAnim { bool Step(); }
+
+static class Fx
+{
+    static readonly HashSet<IAnim> active = new HashSet<IAnim>();
+    static readonly System.Windows.Forms.Timer clock = new System.Windows.Forms.Timer { Interval = 15 };
+
+    static Fx()
+    {
+        clock.Tick += delegate
+        {
+            foreach (var a in active.ToList()) if (!a.Step()) active.Remove(a);
+            if (active.Count == 0) clock.Stop();
+        };
+    }
+
+    public static void Start(IAnim a) { active.Add(a); clock.Start(); }
+
+    // Moves v toward target. With animations off it jumps straight there. Returns true while still moving.
+    public static bool Ease(ref float v, float target, float speed = 0.22f)
+    {
+        if (!Ui.Animations || Math.Abs(target - v) < 0.02f) { v = target; return false; }
+        v += (target - v) * speed;
+        return true;
+    }
+}
+
+// Rounded button with a soft hover and press. BackColor is the fill.
+class FxButton : Button, IAnim
+{
+    public int Radius = -1;   // -1 = default rounding; Height = circle
+    bool isHot, isDown;
+    float hot, down;
+
+    public FxButton()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
+        FlatStyle = FlatStyle.Flat; FlatAppearance.BorderSize = 0; Cursor = Cursors.Hand;
+    }
+
+    protected override void OnMouseEnter(EventArgs e) { isHot = true; Kick(); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { isHot = false; isDown = false; Kick(); base.OnMouseLeave(e); }
+    protected override void OnMouseDown(MouseEventArgs e) { if (e.Button == MouseButtons.Left) { isDown = true; Kick(); } base.OnMouseDown(e); }
+    protected override void OnMouseUp(MouseEventArgs e) { isDown = false; Kick(); base.OnMouseUp(e); }
+    void Kick() { Fx.Start(this); }
+
+    public bool Step()
+    {
+        if (IsDisposed) return false;
+        bool a = Fx.Ease(ref hot, isHot ? 1 : 0), b = Fx.Ease(ref down, isDown ? 1 : 0, 0.4f);
+        Invalidate();
+        return a || b;
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        Ui.PaintUnder(this, g);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        Color c = BackColor;
+        if (!Enabled) c = Ui.Mix(c, Ui.Bg, 0.45f);
+        else { c = Ui.Mix(c, Ui.Light ? Color.Black : Color.White, 0.09f * hot); c = Ui.Mix(c, Color.Black, 0.14f * down); }
+        var r = new Rectangle(0, 0, Width - 1, Height - 1);
+        using (var path = MainForm.RoundRect(r, Radius < 0 ? Ui.S(12) : Radius)) using (var b = new SolidBrush(c)) g.FillPath(b, path);
+        if (Focused && ShowFocusCues)
+            using (var path = MainForm.RoundRect(new Rectangle(1, 1, Width - 3, Height - 3), Radius < 0 ? Ui.S(11) : Math.Max(2, Radius - 2))) using (var pen = new Pen(Ui.Mix(c, ForeColor, 0.6f), 1f)) g.DrawPath(pen, path);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, Enabled ? ForeColor : Ui.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+    }
+}
+
+// Rounded status label (MULTI ON / WAITING). BackColor is the fill.
+class Pill : Label
+{
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        Ui.PaintUnder(this, g);
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        using (var path = MainForm.RoundRect(new Rectangle(0, 0, Width - 1, Height - 1), Height - 1)) using (var b = new SolidBrush(BackColor)) g.FillPath(b, path);
+        TextRenderer.DrawText(g, Text, Font, ClientRectangle, ForeColor, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+    }
+}
+
 // Panel that leaves the window edge to the form (resizing): returns HTTRANSPARENT near the edge.
 class EdgePanel : Panel
 {
-    public const int Edge = 7;
+    public static readonly int Edge = Ui.S(7);
     public EdgePanel() { DoubleBuffered = true; }
+
+    protected override void OnPaintBackground(PaintEventArgs e) { Ui.PaintBack(this, e.Graphics, e.ClipRectangle); }
 
     public static bool NearEdge(Control c, Point screen)
     {
@@ -778,20 +1139,24 @@ class EdgePanel : Panel
     }
 }
 
-// Title bar button: minimize (0), maximize/restore (1), close (2). Glyphs are drawn, no font dependency.
-class CaptionButton : Control
+// Title bar button: minimize (0), maximize/restore (1), close (2), appearance (3). Glyphs are drawn, except the gear.
+class CaptionButton : Control, IAnim
 {
     public readonly int Kind;
-    public bool Maxed, Hot;
+    public bool Maxed;
+    bool hot;
+    float h;
+    static readonly Font Glyph = Ui.F("Segoe MDL2 Assets", 7.5f);
 
     public CaptionButton(int kind)
     {
-        Kind = kind; Size = new Size(46, 36);
+        Kind = kind; Size = new Size(Ui.S(46), Ui.S(36));
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer, true);
     }
 
-    protected override void OnMouseEnter(EventArgs e) { Hot = true; Invalidate(); base.OnMouseEnter(e); }
-    protected override void OnMouseLeave(EventArgs e) { Hot = false; Invalidate(); base.OnMouseLeave(e); }
+    protected override void OnMouseEnter(EventArgs e) { hot = true; Fx.Start(this); base.OnMouseEnter(e); }
+    protected override void OnMouseLeave(EventArgs e) { hot = false; Fx.Start(this); base.OnMouseLeave(e); }
+    public bool Step() { if (IsDisposed) return false; bool m = Fx.Ease(ref h, hot ? 1 : 0, 0.3f); Invalidate(); return m; }
 
     protected override void WndProc(ref Message m)
     {
@@ -799,21 +1164,27 @@ class CaptionButton : Control
         base.WndProc(ref m);
     }
 
+    protected override void OnPaintBackground(PaintEventArgs e) { }
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
-        g.Clear(Hot ? (Kind == 2 ? Color.FromArgb(232, 17, 35) : Color.FromArgb(54, 54, 66)) : Parent.BackColor);
-        int cx = Width / 2, cy = Height / 2;
-        using (var p = new Pen(Color.White, 1f))
+        Ui.PaintUnder(this, g);
+        Color hc = Kind == 2 ? Color.FromArgb(232, 17, 35) : Ui.Mix(Ui.Bar, Ui.Text, 0.12f);
+        if (h > 0) using (var b = new SolidBrush(Color.FromArgb((int)(255 * h), hc))) g.FillRectangle(b, ClientRectangle);
+        Color fg = Kind == 2 ? Ui.Mix(Ui.Text, Color.White, h) : Ui.Text;
+        if (Kind == 3) { TextRenderer.DrawText(g, "\uE713", Glyph, ClientRectangle, fg, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix); return; }
+        int cx = Width / 2, cy = Height / 2, a5 = Ui.S(5), a2 = Ui.S(2), a7 = Ui.S(7);
+        using (var p = new Pen(fg, Math.Max(1f, (float)Math.Floor(Ui.K))))
         {
-            if (Kind == 0) g.DrawLine(p, cx - 5, cy, cx + 5, cy);
-            else if (Kind == 1 && !Maxed) g.DrawRectangle(p, cx - 5, cy - 5, 10, 10);
+            if (Kind == 0) g.DrawLine(p, cx - a5, cy, cx + a5, cy);
+            else if (Kind == 1 && !Maxed) g.DrawRectangle(p, cx - a5, cy - a5, 2 * a5, 2 * a5);
             else if (Kind == 1)   // restore: two overlapping squares
             {
-                g.DrawRectangle(p, cx - 5, cy - 2, 7, 7);
-                g.DrawLines(p, new[] { new Point(cx - 2, cy - 2), new Point(cx - 2, cy - 5), new Point(cx + 5, cy - 5), new Point(cx + 5, cy + 2), new Point(cx + 2, cy + 2) });
+                g.DrawRectangle(p, cx - a5, cy - a2, a7, a7);
+                g.DrawLines(p, new[] { new Point(cx - a2, cy - a2), new Point(cx - a2, cy - a5), new Point(cx + a5, cy - a5), new Point(cx + a5, cy + a2), new Point(cx + a2, cy + a2) });
             }
-            else { g.SmoothingMode = SmoothingMode.AntiAlias; g.DrawLine(p, cx - 5, cy - 5, cx + 5, cy + 5); g.DrawLine(p, cx - 5, cy + 5, cx + 5, cy - 5); }
+            else { g.SmoothingMode = SmoothingMode.AntiAlias; g.DrawLine(p, cx - a5, cy - a5, cx + a5, cy + a5); g.DrawLine(p, cx - a5, cy + a5, cx + a5, cy - a5); }
         }
     }
 }
@@ -822,7 +1193,7 @@ class CaptionButton : Control
 // (dragging, double-click to maximize and edge snapping work natively).
 class TitleBar : EdgePanel
 {
-    static readonly Font F = new Font("Segoe UI Semibold", 9f);
+    static readonly Font F = Ui.F("Segoe UI Semibold", 9f);
     public Image Logo;
 
     protected override void WndProc(ref Message m)
@@ -834,25 +1205,56 @@ class TitleBar : EdgePanel
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
-        if (Logo != null) e.Graphics.DrawImage(Logo, 12, (Height - 16) / 2, 16, 16);
+        int ls = Ui.S(16);
+        if (Logo != null) e.Graphics.DrawImage(Logo, Ui.S(12), (Height - ls) / 2, ls, ls);
         var f = FindForm();
-        TextRenderer.DrawText(e.Graphics, f == null ? "" : f.Text, F, new Point(36, (Height - F.Height) / 2), Color.FromArgb(205, 205, 215));
+        TextRenderer.DrawText(e.Graphics, f == null ? "" : f.Text, F, new Point(Ui.S(36), (Height - F.Height) / 2), Ui.Mix(Ui.Text, Ui.Bar, 0.18f));
     }
 }
 
-// ListBox with double buffering, so the drag insertion marker does not flicker.
+// Account list: double buffered, and the empty space below the rows is painted here (rows paint themselves: no flicker).
 class AccountList : ListBox
 {
     public AccountList() { DoubleBuffered = true; }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x14)   // WM_ERASEBKGND
+        {
+            int bottom = Items.Count == 0 ? 0 : Math.Max(0, GetItemRectangle(Items.Count - 1).Bottom);
+            if (bottom < ClientSize.Height)
+                using (var g = Graphics.FromHdc(m.WParam)) Ui.PaintBack(this, g, new Rectangle(0, bottom, ClientSize.Width, ClientSize.Height - bottom));
+            m.Result = (IntPtr)1;
+            return;
+        }
+        base.WndProc(ref m);
+        if (m.Msg == 0x0F && Items.Count == 0)   // WM_PAINT of an empty list: the native control has just filled it, so the hint goes on top
+            using (var g = Graphics.FromHwnd(Handle))
+            {
+                Ui.PaintBack(this, g, ClientRectangle);
+                TextRenderer.DrawText(g, "No accounts yet\nClick \"+ Add account\" to sign in with your browser.", Font, ClientRectangle, Ui.Muted,
+                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix);
+            }
+    }
 }
 
-class MainForm : Form
+class MainForm : Form, IAnim
 {
-    static readonly Color Bg = Color.FromArgb(18, 18, 22), Card = Color.FromArgb(28, 28, 35), CardSel = Color.FromArgb(44, 44, 68),
-        Accent = Color.FromArgb(99, 102, 241), Green = Color.FromArgb(80, 220, 120), Orange = Color.FromArgb(255, 170, 60),
-        Muted = Color.FromArgb(150, 150, 165), Red = Color.FromArgb(240, 90, 90);
-    static readonly Font FAvatar = new Font("Segoe UI Semibold", 12f), FName = new Font("Segoe UI Semibold", 11f),
-        FSub = new Font("Segoe UI", 8.5f), FNote = new Font("Segoe UI", 9f);
+    static Color Bg { get { return Ui.Bg; } }
+    static Color Card { get { return Ui.Card; } }
+    static Color CardSel { get { return Ui.CardSel; } }
+    static Color Accent { get { return Ui.Accent; } }
+    static Color Green { get { return Ui.Green; } }
+    static Color Orange { get { return Ui.Orange; } }
+    static Color Muted { get { return Ui.Muted; } }
+    static Color Red { get { return Ui.Red; } }
+    static Color Fg { get { return Ui.Text; } }
+    static int S(int v) { return Ui.S(v); }
+    static Point P(int x, int y) { return new Point(S(x), S(y)); }
+    static Size Z(int w, int h) { return new Size(S(w), S(h)); }
+    static void B(Control c, int x, int y, int w, int h) { c.SetBounds(S(x), S(y), S(w), S(h)); }
+    static readonly Font FAvatar = Ui.F("Segoe UI Semibold", 12f), FName = Ui.F("Segoe UI Semibold", 11f),
+        FSub = Ui.F("Segoe UI", 8.5f), FNote = Ui.F("Segoe UI", 9f);
     static readonly Icon AppIcon = Icon.FromHandle(Logo(32).GetHicon());   // one icon handle for the window and every dialog
 
     readonly Mutex mutex = new Mutex(false, "ROBLOX_singletonMutex");
@@ -862,12 +1264,15 @@ class MainForm : Form
     readonly AccountList list = new AccountList();
     int dragIndex = -1, dropLine = -1; Point dragStart;
     readonly TextBox place = new TextBox();
-    readonly Label pill = new Label(), clients = new Label(), msg = new Label();
-    readonly Button btnAdd, btnNick, btnRemove, btnPlay, btnStar, btnTile, btnFollow, btnPres;
+    readonly Label pill = new Pill(), clients = new Label(), msg = new Label();
+    Label lbl;
+    readonly ToolTip tips = new ToolTip();
+    float msgT = 1, pulse; bool msgBad; int hoverIndex = -1;
+    readonly Button btnAdd, btnWeb, btnRemove, btnPlay, btnStar, btnTile, btnFollow, btnPres;
     readonly TitleBar bar = new TitleBar();
     readonly EdgePanel body = new EdgePanel();
-    CaptionButton btnMin, btnMax, btnClose;
-    Button btnUpdate, btnLog;
+    CaptionButton btnMin, btnMax, btnClose, btnSet;
+    Button btnUpdate; Label btnLog;
     TextBox editBox;   // inline nickname editor, shown over the account row
     Account editing;
     string updateUrl;
@@ -902,9 +1307,11 @@ class MainForm : Form
             return Roblox.ProbeOk ? 0 : 10;
         }
         bool first;
-        using (new Mutex(true, "MultiRoblox_SingleInstance", out first))
+        string single = "MultiRoblox_SingleInstance";
+        if (Environment.GetEnvironmentVariable("MULTIROBLOX_DATA") != null) single += "_" + Store.DataDir.Replace('\\', '/');   // a test data folder is a separate instance
+        using (new Mutex(true, single, out first))
         {
-            if (!first) { MessageBox.Show("MultiRoblox is already running (look for it in the taskbar or the system tray).", "MultiRoblox"); return 0; }
+            if (!first && !Demo) { MessageBox.Show("MultiRoblox is already running (look for it in the taskbar or the system tray).", "MultiRoblox"); return 0; }
             System.Net.ServicePointManager.SecurityProtocol = (System.Net.SecurityProtocolType)3072;   // TLS 1.2: Roblox rejects the .NET 4 default
             Application.EnableVisualStyles();
             // Last line of defense: an unexpected error is logged and shown in the status line instead of closing the program.
@@ -917,6 +1324,7 @@ class MainForm : Form
             };
             AppDomain.CurrentDomain.UnhandledException += (o, e) => Store.Log("Fatal error: " + e.ExceptionObject);
             if (!Demo && !Unlock()) return 0;   // password lock (optional)
+            if (!Demo) Task.Run(() => Roblox.CleanTempProfiles());
             Application.Run(new MainForm());
         }
         return 0;
@@ -954,6 +1362,8 @@ class MainForm : Form
         if (Roblox.Obj(null) != null || Roblox.Obj("not json at all") != null || Roblox.Obj("{\"a\":1}") == null) return 19;
         if (!Roblox.IsRbxCdn("https://tr.rbxcdn.com/abc/150/150/x/Png") || Roblox.IsRbxCdn("http://tr.rbxcdn.com/a") || Roblox.IsRbxCdn("https://tr.rbxcdn.com.evil.com/a")
             || Roblox.IsRbxCdn("https://evil.com/tr.rbxcdn.com") || Roblox.IsRbxCdn("not a url") || Roblox.IsRbxCdn(null)) return 15;
+        if (Age(TimeSpan.FromSeconds(20)) != "<1m" || Age(TimeSpan.FromMinutes(5)) != "5m" || Age(TimeSpan.FromMinutes(65)) != "1h 05m" || Age(TimeSpan.FromMinutes(83)) != "1h 23m") return 21;
+        if (Ui.Mix(Color.Black, Color.White, 0.5f).R != 127 || Ui.Mix(Color.Black, Color.White, 2f) != Color.FromArgb(255, 255, 255, 255)) return 22;
         var area = new Rectangle(0, 40, 1920, 1000);
         for (int n = 1; n <= 9; n++)
         {
@@ -968,19 +1378,21 @@ class MainForm : Form
         return 0;
     }
 
-    static Button MakeButton(string text, Color back)
+    static FxButton MakeButton(string text, bool accent)
     {
-        var b = new Button { Text = text, BackColor = back, ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Cursor = Cursors.Hand, Font = new Font("Segoe UI Semibold", 10f) };
-        b.FlatAppearance.BorderSize = 0;
+        var b = new FxButton { Text = text, Font = Ui.F("Segoe UI Semibold", 10f), Tag = accent ? "accent" : null };
+        Recolor(b);
         return b;
     }
+
+    static void Recolor(FxButton b) { bool acc = "accent".Equals(b.Tag); b.BackColor = acc ? Accent : Card; b.ForeColor = acc ? Color.White : Fg; }
 
     static List<Account> DemoAccounts()
     {
         return new List<Account>
         {
-            new Account { Id = 1001, Name = "main_account", Nick = "Main", Cookie = "", PresType = 2, Presence = "in game: Rogue Lineage", Note = "open" },
-            new Account { Id = 1002, Name = "alt_farm_01", Nick = "Farm 1", Cookie = "", PresType = 2, Presence = "in game: Rogue Lineage", Note = "open" },
+            new Account { Id = 1001, Name = "main_account", Nick = "Main", Cookie = "", PresType = 2, Presence = "in game: Rogue Lineage", Note = "open", Opened = DateTime.Now.AddMinutes(-83) },
+            new Account { Id = 1002, Name = "alt_farm_01", Nick = "Farm 1", Cookie = "", PresType = 2, Presence = "in game: Rogue Lineage", Note = "open", Opened = DateTime.Now.AddMinutes(-12) },
             new Account { Id = 1003, Name = "alt_farm_02", Nick = "Farm 2", Cookie = "", PresType = 1, Presence = "online (website)" },
             new Account { Id = 1004, Name = "alt_backup", Cookie = "", PresType = 0, Presence = "offline" },
         };
@@ -1038,7 +1450,7 @@ class MainForm : Form
 
     // Without the Windows frame, WinForms still adds the frame (7 px per side) to the "normal" size when the window is
     // restored, and it would grow 14 px on every maximize/restore. frameExtra is exactly that extra: we undo only it.
-    Size normalSize = new Size(562, 578), frameExtra;
+    Size normalSize = Z(562, 578), frameExtra;
 
     void FixRestoredSize()
     {
@@ -1090,33 +1502,33 @@ class MainForm : Form
         base.WndProc(ref m);
     }
 
-    // Dark title bar for the small dialog windows too (Windows 10 2004+ and 11).
-    static void DarkTitle(Form f)
+    // Title bar of the small dialog windows in the theme's colors (Windows 10 2004+ and 11).
+    static void DarkTitle(Form f) { f.HandleCreated += delegate { SetTitleTheme(f); }; }
+
+    static void SetTitleTheme(Form f)
     {
-        f.HandleCreated += delegate
-        {
-            int on = 1, color = 18 | (18 << 8) | (22 << 16);   // COLORREF 0x00BBGGRR = program background
-            Native.DwmSetWindowAttribute(f.Handle, 20, ref on, 4);      // DWMWA_USE_IMMERSIVE_DARK_MODE
-            Native.DwmSetWindowAttribute(f.Handle, 35, ref color, 4);   // DWMWA_CAPTION_COLOR (Windows 11 only)
-        };
+        if (!f.IsHandleCreated) return;
+        int dark = Ui.Light ? 0 : 1, color = Bg.R | (Bg.G << 8) | (Bg.B << 16);   // COLORREF 0x00BBGGRR = program background
+        Native.DwmSetWindowAttribute(f.Handle, 20, ref dark, 4);    // DWMWA_USE_IMMERSIVE_DARK_MODE
+        Native.DwmSetWindowAttribute(f.Handle, 35, ref color, 4);   // DWMWA_CAPTION_COLOR (Windows 11 only)
     }
 
     MainForm()
     {
         Text = "MultiRoblox  v" + System.Reflection.Assembly.GetExecutingAssembly().GetName().Version.ToString(3);
         FormBorderStyle = FormBorderStyle.None;
-        ClientSize = new Size(562, 578);   // 560 of content + 1 px border on each side; 36 for the bar + 540 for the body
-        MinimumSize = new Size(562, 578);
+        ClientSize = Z(562, 578);   // 560 of content + 1 px border on each side; 36 for the bar + 540 for the body
+        MinimumSize = Z(562, 578);
         Icon = AppIcon;
-        BackColor = Color.FromArgb(52, 52, 64);   // the form background color becomes the 1 px border
+        Font = Ui.F("Segoe UI", 9f);
         StartPosition = FormStartPosition.CenterScreen;
 
-        pill.SetBounds(318, 14, 114, 28); pill.TextAlign = ContentAlignment.MiddleCenter; pill.Font = new Font("Segoe UI Semibold", 10f);
+        B(pill, 318, 14, 114, 28); pill.Font = Ui.F("Segoe UI Semibold", 9.5f);
         pill.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        clients.SetBounds(20, 18, 290, 20); clients.ForeColor = Muted;
+        B(clients, 20, 18, 290, 20);
 
-        list.SetBounds(20, 56, 520, 246);
-        list.BackColor = Bg; list.BorderStyle = BorderStyle.None; list.DrawMode = DrawMode.OwnerDrawFixed; list.ItemHeight = 54;
+        B(list, 20, 56, 520, 246);
+        list.BorderStyle = BorderStyle.None; list.DrawMode = DrawMode.OwnerDrawFixed; list.ItemHeight = S(54);
         list.SelectionMode = SelectionMode.MultiExtended;
         list.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         list.DrawItem += DrawAccount;
@@ -1125,63 +1537,68 @@ class MainForm : Form
         list.DragOver += ListDragOver; list.DragDrop += ListDragDrop;
         list.DragLeave += delegate { dropLine = -1; list.Invalidate(); };
         list.KeyDown += ListKeyDown;
+        list.MouseMove += delegate(object o, MouseEventArgs e) { int i = list.IndexFromPoint(e.Location); if (i != hoverIndex) { hoverIndex = i; Fx.Start(this); } };
+        list.MouseLeave += delegate { hoverIndex = -1; Fx.Start(this); };
+        list.SelectedIndexChanged += delegate { Fx.Start(this); };
 
         const AnchorStyles BL = AnchorStyles.Bottom | AnchorStyles.Left;
-        icon.SetBounds(20, 312, 48, 48); icon.SizeMode = PictureBoxSizeMode.StretchImage; icon.BackColor = Card; icon.Anchor = BL;
-        gameName.SetBounds(78, 314, 462, 24); gameName.Font = new Font("Segoe UI Semibold", 11f); gameName.AutoEllipsis = true; gameName.Anchor = BL | AnchorStyles.Right;
-        gameSub.SetBounds(78, 340, 462, 20); gameSub.ForeColor = Muted; gameSub.Anchor = BL | AnchorStyles.Right;
+        B(icon, 20, 312, 48, 48); icon.SizeMode = PictureBoxSizeMode.StretchImage; icon.Anchor = BL;
+        B(gameName, 78, 314, 462, 24); gameName.Font = Ui.F("Segoe UI Semibold", 11f); gameName.AutoEllipsis = true; gameName.Anchor = BL | AnchorStyles.Right;
+        B(gameSub, 78, 340, 462, 20); gameSub.Anchor = BL | AnchorStyles.Right;
 
-        var lbl = new Label { Text = "Place ID", ForeColor = Muted, AutoSize = true, Location = new Point(20, 375), Anchor = BL };
-        place.SetBounds(82, 370, 170, 26); place.Text = Store.LoadPlace().Length > 0 ? Store.LoadPlace() : "3016661674";
-        place.BackColor = Card; place.ForeColor = Color.White; place.BorderStyle = BorderStyle.FixedSingle; place.Anchor = BL;
-        btnStar = MakeButton("\u2606", Card); btnStar.SetBounds(258, 370, 32, 26); btnStar.Font = new Font("Segoe UI Symbol", 11f); btnStar.Anchor = BL;
-        favBox.SetBounds(296, 370, 244, 26); favBox.DropDownStyle = ComboBoxStyle.DropDownList; favBox.FlatStyle = FlatStyle.Flat;
-        favBox.BackColor = Card; favBox.ForeColor = Color.White; favBox.Anchor = BL | AnchorStyles.Right;
-        favBox.DrawMode = DrawMode.OwnerDrawFixed; favBox.ItemHeight = 20;
+        lbl = new Label { Text = "Place ID", AutoSize = true, Location = P(20, 375), Anchor = BL };
+        B(place, 82, 370, 170, 26); place.Text = Store.LoadPlace().Length > 0 ? Store.LoadPlace() : "3016661674";
+        place.BorderStyle = BorderStyle.FixedSingle; place.Anchor = BL;
+        btnStar = MakeButton("\u2606", false); B(btnStar, 258, 370, 32, 26); btnStar.Font = Ui.F("Segoe UI Symbol", 11f); btnStar.Anchor = BL;
+        B(favBox, 296, 370, 244, 26); favBox.DropDownStyle = ComboBoxStyle.DropDownList; favBox.FlatStyle = FlatStyle.Flat;
+        favBox.Anchor = BL | AnchorStyles.Right;
+        favBox.DrawMode = DrawMode.OwnerDrawFixed; favBox.ItemHeight = S(20);
         favBox.DrawItem += delegate(object o, DrawItemEventArgs e)   // the stock ComboBox ignores the dark theme
         {
             bool hot = e.Index >= 0 && (e.State & DrawItemState.ComboBoxEdit) == 0 && (e.State & DrawItemState.Selected) != 0;
             using (var br = new SolidBrush(hot ? CardSel : Card)) e.Graphics.FillRectangle(br, e.Bounds);
             string t = e.Index >= 0 ? (string)favBox.Items[e.Index] : "Favorites";
-            TextRenderer.DrawText(e.Graphics, t, FNote, new Rectangle(e.Bounds.X + 4, e.Bounds.Y, e.Bounds.Width - 4, e.Bounds.Height), e.Index >= 0 ? Color.White : Muted,
+            TextRenderer.DrawText(e.Graphics, t, FNote, new Rectangle(e.Bounds.X + S(4), e.Bounds.Y, e.Bounds.Width - S(4), e.Bounds.Height), e.Index >= 0 ? Fg : Muted,
                 TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
         };
         RefreshFavBox();
 
-        btnAdd = MakeButton("+ Add account", Card); btnAdd.SetBounds(20, 408, 150, 38);
-        btnNick = MakeButton("Nickname", Card); btnNick.SetBounds(178, 408, 96, 38);
-        btnRemove = MakeButton("Remove", Card); btnRemove.SetBounds(282, 408, 96, 38);
-        btnTile = MakeButton("Tile windows", Card); btnTile.SetBounds(386, 408, 154, 38);
-        btnFollow = MakeButton("Follow user...", Card); btnFollow.SetBounds(20, 454, 232, 42);
-        btnPlay = MakeButton("\u25B6  Play", Accent); btnPlay.SetBounds(260, 454, 280, 42);
-        btnPres = MakeButton("\u21BB Status", Card); btnPres.SetBounds(440, 14, 100, 28); btnPres.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        foreach (var b in new[] { btnAdd, btnNick, btnRemove, btnTile, btnFollow }) b.Anchor = BL;
+        btnAdd = MakeButton("+ Add account", false); B(btnAdd, 20, 408, 140, 38);
+        btnWeb = MakeButton("Open in browser", false); B(btnWeb, 168, 408, 128, 38);
+        btnRemove = MakeButton("Remove", false); B(btnRemove, 304, 408, 90, 38);
+        btnTile = MakeButton("Tile windows", false); B(btnTile, 402, 408, 138, 38);
+        btnFollow = MakeButton("Follow user...", false); B(btnFollow, 20, 454, 232, 42);
+        btnPlay = MakeButton("\u25B6  Play", true); B(btnPlay, 260, 454, 280, 42);
+        btnPres = MakeButton("\u21BB Status", false); B(btnPres, 440, 14, 100, 28); btnPres.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        foreach (var b in new[] { btnAdd, btnWeb, btnRemove, btnTile, btnFollow }) b.Anchor = BL;
         btnPlay.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        msg.SetBounds(20, 506, 430, 20); msg.ForeColor = Muted; msg.Anchor = BL;
-        btnLog = new Button { Text = "Open log", FlatStyle = FlatStyle.Flat, ForeColor = Muted, BackColor = Bg, Cursor = Cursors.Hand, Font = new Font("Segoe UI", 8.5f), TextAlign = ContentAlignment.MiddleRight };
-        btnLog.FlatAppearance.BorderSize = 0; btnLog.FlatAppearance.MouseOverBackColor = Bg; btnLog.FlatAppearance.MouseDownBackColor = Bg;
-        btnLog.SetBounds(458, 505, 82, 22); btnLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
-        btnLog.MouseEnter += delegate { btnLog.ForeColor = Color.White; }; btnLog.MouseLeave += delegate { btnLog.ForeColor = Muted; };
+        B(msg, 20, 506, 430, 20); msg.Anchor = BL; msg.AutoEllipsis = true;
+        btnLog = new Label { Text = "Open log", Cursor = Cursors.Hand, Font = Ui.F("Segoe UI", 8.5f), TextAlign = ContentAlignment.MiddleRight };
+        B(btnLog, 458, 505, 82, 22); btnLog.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        btnLog.MouseEnter += delegate { btnLog.ForeColor = Fg; }; btnLog.MouseLeave += delegate { btnLog.ForeColor = Muted; };
         btnLog.Click += delegate { OpenLog(); };
 
-        bar.SetBounds(1, 1, 560, 36); bar.BackColor = Color.FromArgb(24, 24, 30); bar.Logo = Logo(16);
+        bar.SetBounds(1, 1, ClientSize.Width - 2, S(36)); bar.Logo = Logo(S(16));   // the 1 px border stays 1 px at any scale
         bar.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-        btnMin = new CaptionButton(0); btnMax = new CaptionButton(1); btnClose = new CaptionButton(2);
-        btnMin.Location = new Point(560 - 138, 0); btnMax.Location = new Point(560 - 92, 0); btnClose.Location = new Point(560 - 46, 0);
-        foreach (var cb in new[] { btnMin, btnMax, btnClose }) cb.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-        bar.Controls.AddRange(new Control[] { btnMin, btnMax, btnClose });
-        btnUpdate = MakeButton("", Accent); btnUpdate.SetBounds(284, 6, 130, 24); btnUpdate.Anchor = AnchorStyles.Top | AnchorStyles.Right; btnUpdate.Visible = false;
+        btnMin = new CaptionButton(0); btnMax = new CaptionButton(1); btnClose = new CaptionButton(2); btnSet = new CaptionButton(3);
+        int cw = S(46);
+        btnSet.Location = new Point(bar.Width - 4 * cw, 0); btnMin.Location = new Point(bar.Width - 3 * cw, 0); btnMax.Location = new Point(bar.Width - 2 * cw, 0); btnClose.Location = new Point(bar.Width - cw, 0);
+        foreach (var cb in new[] { btnSet, btnMin, btnMax, btnClose }) cb.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        bar.Controls.AddRange(new Control[] { btnSet, btnMin, btnMax, btnClose });
+        btnSet.Click += delegate { ShowAppearance(); };
+        tips.SetToolTip(btnSet, "Appearance");
+        btnUpdate = MakeButton("", true); B(btnUpdate, 238, 6, 130, 24); btnUpdate.Anchor = AnchorStyles.Top | AnchorStyles.Right; btnUpdate.Visible = false;
         btnUpdate.Click += delegate { if (updateUrl != null) Process.Start(new ProcessStartInfo(updateUrl) { UseShellExecute = true }); };
-        new ToolTip().SetToolTip(btnUpdate, "A new version is available. Click to open the download page.");
+        tips.SetToolTip(btnUpdate, "A new version is available. Click to open the download page.");
         bar.Controls.Add(btnUpdate);
         btnMin.Click += delegate { WindowState = FormWindowState.Minimized; };
         btnMax.Click += delegate { WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized; };
         btnClose.Click += delegate { Close(); };
-        body.SetBounds(1, 37, 560, 540); body.BackColor = Bg; body.ForeColor = Color.White; body.Font = Font;
+        body.SetBounds(1, 1 + S(36), ClientSize.Width - 2, ClientSize.Height - 2 - S(36)); body.Font = Font;
         body.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
         Controls.Add(body); Controls.Add(bar);
-        body.Controls.AddRange(new Control[] { pill, clients, btnPres, list, icon, gameName, gameSub, lbl, place, btnStar, favBox, btnAdd, btnNick, btnRemove, btnTile, btnFollow, btnPlay, msg, btnLog });
-        editBox = new TextBox { Visible = false, MaxLength = 24, BorderStyle = BorderStyle.FixedSingle, BackColor = Bg, ForeColor = Color.White, Font = FName };
+        body.Controls.AddRange(new Control[] { pill, clients, btnPres, list, icon, gameName, gameSub, lbl, place, btnStar, favBox, btnAdd, btnWeb, btnRemove, btnTile, btnFollow, btnPlay, msg, btnLog });
+        editBox = new TextBox { Visible = false, MaxLength = 24, BorderStyle = BorderStyle.FixedSingle, Font = FName };
         editBox.KeyDown += delegate(object o, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter) { e.SuppressKeyPress = true; EndEdit(true, true); }
@@ -1191,12 +1608,13 @@ class MainForm : Form
         body.Controls.Add(editBox); editBox.BringToFront();
         btnAdd.Click += delegate { AddAccount(); };
         btnRemove.Click += delegate { RemoveSelected(); };
-        btnNick.Click += delegate { RenameSelected(); };
+        btnWeb.Click += delegate { OpenSelectedInBrowser(); };
         var ctx = new ContextMenu();
         ctx.MenuItems.Add("Play", delegate { PlaySelected(); });
         var miClose = new MenuItem("Close client"); miClose.Click += delegate { CloseSelectedClients(); };
         ctx.MenuItems.Add(miClose);
         ctx.MenuItems.Add("-");
+        ctx.MenuItems.Add("Open in browser", delegate { OpenSelectedInBrowser(); });
         ctx.MenuItems.Add("Nickname...", delegate { RenameSelected(); });
         ctx.MenuItems.Add("Remove", delegate { RemoveSelected(); });
         ctx.Popup += delegate { miClose.Enabled = list.SelectedItems.Cast<Account>().Any(a => a.Pid != 0); };   // only clients opened by MultiRoblox can be closed
@@ -1214,6 +1632,7 @@ class MainForm : Form
         tray.DoubleClick += delegate { Restore(); };
         var menu = new ContextMenu();
         menu.MenuItems.Add("Show", delegate { Restore(); });
+        menu.MenuItems.Add("Appearance...", delegate { Restore(); if (Visible) ShowAppearance(); });
         var miLock = new MenuItem("Lock now");   // hides the window to the tray; showing it again asks for the password
         miLock.Click += delegate { Hide(); };
         menu.MenuItems.Add(miLock);
@@ -1239,17 +1658,32 @@ class MainForm : Form
         Native.AdjustWindowRectEx(ref fr, CreateParams.Style, false, CreateParams.ExStyle);
         frameExtra = new Size(fr.Right - fr.Left, fr.Bottom - fr.Top);
         Resize += delegate { FixRestoredSize(); btnMax.Maxed = WindowState == FormWindowState.Maximized; btnMax.Invalidate(); };
+        UserPreferenceChangedEventHandler wallpaper = (o, e) => { if (e.Category == UserPreferenceCategory.Desktop && IsHandleCreated) BeginInvoke((Action)delegate { Ui.ResetBackdrop(); if (Ui.Mica) Invalidate(true); }); };
+        SystemEvents.UserPreferenceChanged += wallpaper;   // a new wallpaper means a new backdrop
+        LocationChanged += delegate { if (Ui.Mica) Invalidate(true); };   // the backdrop is aligned to the screen
+        Activated += delegate { Fx.Start(this); };   // resumes the "in game" ping
+        FormClosing += delegate { SaveWindow(); };
         FormClosed += delegate
         {
+            SystemEvents.UserPreferenceChanged -= wallpaper;
             tray.Visible = false; timer.Stop(); if (cts != null) cts.Cancel();
             try { if (owned) mutex.ReleaseMutex(); } catch (Exception) { }   // closing must never fail
             mutex.Dispose(); ev.Dispose();
         };
 
+        tips.SetToolTip(btnAdd, "Add an account (Ctrl+N)");
+        tips.SetToolTip(btnWeb, "Open roblox.com signed in as the selected account (Ctrl+B). Nickname: F2 or double-click");
+        tips.SetToolTip(btnRemove, "Remove the selected accounts (Del)");
+        tips.SetToolTip(btnTile, "Arrange the Roblox windows in a grid (Ctrl+T)");
+        tips.SetToolTip(btnFollow, "Join the server where a user is playing");
+        tips.SetToolTip(btnPlay, "Launch the selected accounts (Enter)");
+        tips.SetToolTip(btnPres, "Refresh the online status (F5)");
+        tips.SetToolTip(btnStar, "Add or remove this game from your favorites");
+        ApplyTheme();
+        RestoreWindow();
         RefreshList();
         timer.Interval = 1000; timer.Tick += delegate { Tick(); }; timer.Start();
         Tick();
-        if (accounts.Count == 0) Say("Click \"+ Add account\" to get started.");
         if (Store.LoadWarning != null) Say(Store.LoadWarning, true);
         LookupGame();
         SyncFavUi();
@@ -1303,7 +1737,7 @@ class MainForm : Form
     }
 
     void Restore() { if (!Visible && Store.HasPassword() && !Unlock()) return; Show(); WindowState = FormWindowState.Normal; Activate(); }   // a hidden window (only "Lock now" hides it) means locked
-    void Say(string s, bool bad = false) { if (IsDisposed) return; msg.Text = s; msg.ForeColor = bad ? Red : Muted; }
+    void Say(string s, bool bad = false) { if (IsDisposed) return; msg.Text = s; msgBad = bad; msgT = 0; msg.ForeColor = Ui.Mix(Bg, bad ? Red : Muted, 0); Fx.Start(this); }
 
     // Moves the item at 'from' so it ends up before the item that was at insertion index 'to' (0..Count).
     static void MoveItem<T>(List<T> l, int from, int to)
@@ -1394,44 +1828,109 @@ class MainForm : Form
         list.EndUpdate();
     }
 
+    // Avatar circle inside a row, and the status dot on it.
+    static Rectangle AvatarRect(Rectangle bounds) { return new Rectangle(bounds.X + S(10), bounds.Y + (bounds.Height - S(36)) / 2, S(36), S(36)); }
+    static Rectangle DotRect(Rectangle bounds) { var a = AvatarRect(bounds); return new Rectangle(a.Right - S(10), a.Bottom - S(10), S(12), S(12)); }
+
     void DrawAccount(object s, DrawItemEventArgs e)
     {
-        if (e.Index < 0) return;
+        if (e.Index < 0 || e.Index >= list.Items.Count) return;
+        using (var buf = BufferedGraphicsManager.Current.Allocate(e.Graphics, e.Bounds))   // the row reaches the screen in one piece (the ping repaints it many times a second)
+        {
+            DrawRow(buf.Graphics, e);
+            buf.Render(e.Graphics);
+        }
+    }
+
+    void DrawRow(Graphics g, DrawItemEventArgs e)
+    {
         var a = (Account)list.Items[e.Index];
-        var g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
-        using (var bg = new SolidBrush(Bg)) g.FillRectangle(bg, e.Bounds);
-        var row = new Rectangle(e.Bounds.X, e.Bounds.Y + 3, e.Bounds.Width - 2, e.Bounds.Height - 6);
-        using (var p = RoundRect(row, 10)) using (var br = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? CardSel : Card)) g.FillPath(br, p);
-        var dot = new Rectangle(row.X + 10, row.Y + 6, 36, 36);
+        Ui.PaintBack(list, g, e.Bounds);   // before antialiasing, which would leave the top pixel row half painted
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        const TextFormatFlags T = TextFormatFlags.PreserveGraphicsTranslateTransform;   // the row buffer is offset; plain TextRenderer ignores that
+        var row = new Rectangle(e.Bounds.X, e.Bounds.Y + S(3), e.Bounds.Width - S(2), e.Bounds.Height - S(6));
+        Color fill = Ui.Mix(Ui.Mix(Card, Ui.CardHot, a.Hot), CardSel, a.Sel);
+        using (var p = RoundRect(row, S(14))) using (var br = new SolidBrush(Ui.Mica ? Color.FromArgb(222, fill) : fill)) g.FillPath(br, p);
+        if (a.Sel > 0.02f)   // accent marker on the left of selected rows
+            using (var p = RoundRect(new Rectangle(row.X + S(3), row.Y + row.Height / 4, S(3), row.Height / 2), S(3))) using (var br = new SolidBrush(Color.FromArgb((int)(255 * a.Sel), Accent))) g.FillPath(br, p);
+        var dot = AvatarRect(e.Bounds);
         if (a.Avatar != null) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(a.Avatar, dot); }
         else
         {
             using (var br = new SolidBrush(Accent)) g.FillEllipse(br, dot);
-            TextRenderer.DrawText(g, a.Shown.Length > 0 ? a.Shown.Substring(0, 1).ToUpper() : "?", FAvatar, dot, Color.White, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            TextRenderer.DrawText(g, a.Shown.Length > 0 ? a.Shown.Substring(0, 1).ToUpper() : "?", FAvatar, dot, Color.White, T | TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
         // status dot on the avatar: green = in game, blue = online, orange = Studio, gray = offline, none = not checked yet
-        Color sc = a.PresType == 2 ? Green : a.PresType == 1 ? Accent : a.PresType == 3 ? Orange : a.PresType == 0 ? Color.FromArgb(110, 110, 125) : Color.Empty;
+        Color sc = a.PresType == 2 ? Green : a.PresType == 1 ? Accent : a.PresType == 3 ? Orange : a.PresType == 0 ? Ui.Mix(Muted, Card, 0.25f) : Color.Empty;
         if (!sc.IsEmpty)
         {
-            var sd = new Rectangle(dot.Right - 10, dot.Bottom - 10, 12, 12);
-            using (var ring = new SolidBrush((e.State & DrawItemState.Selected) != 0 ? CardSel : Card)) g.FillEllipse(ring, sd.X - 2, sd.Y - 2, sd.Width + 4, sd.Height + 4);   // ring in the row color separates the dot from the picture
+            var sd = DotRect(e.Bounds);
+            if (a.PresType == 2 && Ui.Animations && pulse > 0)   // "in game" ping: a ring that grows and fades
+            {
+                float grow = S(7) * pulse;
+                using (var br = new SolidBrush(Color.FromArgb((int)(150 * (1 - pulse)), sc))) g.FillEllipse(br, sd.X - grow, sd.Y - grow, sd.Width + 2 * grow, sd.Height + 2 * grow);
+            }
+            int ring = S(2);
+            using (var br = new SolidBrush(fill)) g.FillEllipse(br, sd.X - ring, sd.Y - ring, sd.Width + 2 * ring, sd.Height + 2 * ring);   // ring in the row color separates the dot from the picture
             using (var db = new SolidBrush(sc)) g.FillEllipse(db, sd);
         }
-        TextRenderer.DrawText(g, a.Shown, FName, new Point(row.X + 52, row.Y + 6), Color.White);
-        TextRenderer.DrawText(g, (a.Nick.Length > 0 ? a.Name + "  \u00B7  " : "") + "ID " + a.Id, FSub, new Point(row.X + 52, row.Y + 27), Muted);
-        var right = new Rectangle(row.X + 200, row.Y + 6, row.Width - 210, 20);
+        TextRenderer.DrawText(g, a.Shown, FName, new Point(row.X + S(56), row.Y + S(6)), Fg, T);
+        TextRenderer.DrawText(g, (a.Nick.Length > 0 ? a.Name + "  \u00B7  " : "") + "ID " + a.Id, FSub, new Point(row.X + S(56), row.Y + S(27)), Muted, T);
+        var right = new Rectangle(row.X + S(200), row.Y + S(6), row.Width - S(212), S(20));
         if (a.Presence.Length > 0)
-            TextRenderer.DrawText(g, "\u25CF " + a.Presence, FNote, right, a.PresType == 2 ? Green : a.PresType == 1 ? Accent : Muted, TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
-        if (a.Note.Length > 0)
-            TextRenderer.DrawText(g, a.Note, FNote, new Rectangle(right.X, row.Y + 26, right.Width, 20), a.Note.StartsWith("!") ? Red : Green, TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
+            TextRenderer.DrawText(g, "\u25CF " + a.Presence, FNote, right, a.PresType == 2 ? Green : a.PresType == 1 ? Accent : Muted, T | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
+        string note = a.Note;
+        if (note == "open" && a.Opened != DateTime.MinValue) { a.AgeShown = Age(DateTime.Now - a.Opened); note = "open \u00B7 " + a.AgeShown; }
+        if (note.Length > 0)
+            TextRenderer.DrawText(g, note, FNote, new Rectangle(right.X, row.Y + S(26), right.Width, S(20)), note.StartsWith("!") ? Red : Green, T | TextFormatFlags.Right | TextFormatFlags.EndEllipsis);
         if (dropLine >= 0)   // drag insertion marker: above this item, or below the last one
         {
             int y = dropLine == e.Index ? e.Bounds.Top + 1 : dropLine == list.Items.Count && e.Index == list.Items.Count - 1 ? e.Bounds.Bottom - 2 : -1;
-            if (y >= 0) using (var br = new SolidBrush(Accent)) g.FillRectangle(br, e.Bounds.X + 4, y - 1, e.Bounds.Width - 8, 3);
+            if (y >= 0) using (var br = new SolidBrush(Accent)) g.FillRectangle(br, e.Bounds.X + S(4), y - 1, e.Bounds.Width - S(8), Math.Max(3, S(3)));
         }
     }
 
-    static GraphicsPath RoundRect(Rectangle r, int d)
+    // How long a client has been open: "<1m", "12m", "1h 05m".
+    static string Age(TimeSpan t)
+    {
+        if (t.TotalMinutes < 1) return "<1m";
+        if (t.TotalHours < 1) return (int)t.TotalMinutes + "m";
+        return (int)t.TotalHours + "h " + t.Minutes.ToString("00") + "m";
+    }
+
+    // Animation step: row hover/selection fades, the status message fade-in and the "in game" ping.
+    public bool Step()
+    {
+        if (IsDisposed) return false;
+        bool more = false;
+        for (int i = 0; i < list.Items.Count; i++)
+        {
+            var a = (Account)list.Items[i];
+            float h0 = a.Hot, s0 = a.Sel;
+            more |= Fx.Ease(ref a.Hot, i == hoverIndex ? 1 : 0, 0.25f);
+            more |= Fx.Ease(ref a.Sel, list.GetSelected(i) ? 1 : 0, 0.25f);
+            if ((h0 != a.Hot || s0 != a.Sel) && list.IsHandleCreated) list.Invalidate(list.GetItemRectangle(i));
+        }
+        float t0 = msgT;
+        more |= Fx.Ease(ref msgT, 1, 0.12f);
+        if (t0 != msgT) msg.ForeColor = Ui.Mix(Bg, msgBad ? Red : Muted, msgT);
+        bool ping = PulseWanted();
+        if ((ping && Environment.TickCount - lastPulse >= 50) || (!ping && pulse > 0))   // 20 frames a second is enough for a soft ring
+        {
+            lastPulse = Environment.TickCount;
+            pulse = ping ? (Environment.TickCount % 1800) / 1800f : 0;
+            for (int i = 0; i < list.Items.Count; i++)
+                if (((Account)list.Items[i]).PresType == 2 && list.IsHandleCreated) { var r = DotRect(list.GetItemRectangle(i)); r.Inflate(S(11), S(11)); list.Invalidate(r); }
+        }
+        return more || ping;
+    }
+
+    int lastPulse;
+
+    // Only while this window is the active one: while you play, it costs nothing.
+    bool PulseWanted() { return Ui.Animations && ActiveForm == this && WindowState != FormWindowState.Minimized && accounts.Any(a => a.PresType == 2); }
+
+    public static GraphicsPath RoundRect(Rectangle r, int d)
     {
         var p = new GraphicsPath();
         p.AddArc(r.X, r.Y, d, d, 180, 90); p.AddArc(r.Right - d, r.Y, d, d, 270, 90);
@@ -1451,18 +1950,24 @@ class MainForm : Form
         int n = pids.Count;
         bool changed = false;
         foreach (var a in accounts)
-            if (a.Pid != 0 && !pids.Contains(a.Pid)) { a.Pid = 0; if (a.Note == "open") a.Note = ""; changed = true; }
+            if (a.Pid != 0 && !pids.Contains(a.Pid)) { a.Pid = 0; a.Opened = DateTime.MinValue; if (a.Note == "open") a.Note = ""; changed = true; }
         if (changed) list.Invalidate();
         bool shown = owned || Demo;
         if (Demo) n = 2;
         clients.Text = "Open clients: " + n + (shown ? "" : "  -  close them all to enable");
         pill.Text = shown ? "MULTI ON" : "WAITING";
-        pill.BackColor = shown ? Color.FromArgb(24, 70, 44) : Color.FromArgb(80, 56, 20);
-        pill.ForeColor = shown ? Green : Orange;
+        var pc = shown ? Green : Orange;
+        pill.BackColor = Ui.Mix(Bg, pc, Ui.Light ? 0.16f : 0.22f); pill.ForeColor = pc; pill.Invalidate();
+        for (int i = 0; i < list.Items.Count; i++)   // "open 12m": repaint a row when its minute changes
+        {
+            var a = (Account)list.Items[i];
+            if (a.Note == "open" && a.Opened != DateTime.MinValue && Age(DateTime.Now - a.Opened) != a.AgeShown && list.IsHandleCreated) list.Invalidate(list.GetItemRectangle(i));
+        }
+        if (PulseWanted()) Fx.Start(this);
         tray.Text = "MultiRoblox - " + (shown ? "ON" : "WAITING") + " (" + n + ")";
     }
 
-    void SetBusy(bool b) { if (IsDisposed) return; busy = b; btnAdd.Enabled = btnNick.Enabled = btnRemove.Enabled = btnPlay.Enabled = btnFollow.Enabled = !b; }
+    void SetBusy(bool b) { if (IsDisposed) return; busy = b; btnAdd.Enabled = btnRemove.Enabled = btnPlay.Enabled = btnFollow.Enabled = !b; }
 
     async void AddAccount()
     {
@@ -1534,8 +2039,8 @@ class MainForm : Form
         var r = list.GetItemRectangle(i);
         editing = a;
         editBox.Text = a.Nick;
-        editBox.Width = 250;
-        editBox.Location = new Point(list.Left + r.X + 49, list.Top + r.Y + 18 - editBox.Height / 2);   // right over the name
+        editBox.Width = S(250);
+        editBox.Location = new Point(list.Left + r.X + S(49), list.Top + r.Y + S(18) - editBox.Height / 2);   // right over the name
         editBox.Visible = true; editBox.BringToFront();
         Native.SendMessage(editBox.Handle, 0x1501, (IntPtr)1, "Nickname");   // EM_SETCUEBANNER: hint shown while it is empty
         editBox.Focus(); editBox.SelectAll();
@@ -1561,6 +2066,28 @@ class MainForm : Form
         accounts.RemoveAll(sel.Contains);
         Store.Save(accounts);
         RefreshList();
+    }
+
+    // Opens roblox.com/home signed in as each selected account, each in its own temporary browser window.
+    async void OpenSelectedInBrowser()
+    {
+        var sel = list.SelectedItems.Cast<Account>().ToList();
+        if (sel.Count == 0) { Say("Select an account to open it in the browser.", true); return; }
+        if (!btnWeb.Enabled) return;
+        btnWeb.Enabled = false;
+        int opened = 0; string last = null;
+        try
+        {
+            foreach (var a in sel)
+            {
+                if (a.Cookie.Length == 0 || a.Note.Contains("expired")) { Say(a.Shown + ": login expired - add the account again.", true); continue; }
+                Say("Opening the browser as " + a.Shown + "...");
+                if (await Roblox.OpenInBrowser(a, s => Say(s, true))) { opened++; last = a.Shown; }
+                if (IsDisposed) return;
+            }
+            if (opened > 0) Say(opened == 1 ? "Opened roblox.com as " + last + "." : "Opened " + opened + " browser windows.");
+        }
+        finally { if (!IsDisposed) btnWeb.Enabled = true; }
     }
 
     void PlaySelected()
@@ -1592,14 +2119,14 @@ class MainForm : Form
 
     static string AskUser(List<string> names)
     {
-        using (var f = new Form { Text = "Follow user", ClientSize = new Size(340, 140), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
-            MaximizeBox = false, MinimizeBox = false, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f) })
+        using (var f = new Form { Text = "Follow user", ClientSize = Z(340, 140), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false, MinimizeBox = false, BackColor = Bg, ForeColor = Fg, Font = Ui.F("Segoe UI", 9.5f) })
         {
             DarkTitle(f);
-            var l = new Label { Text = "User name or ID to follow (pick one of your accounts or type one). Must be a friend or allow joining.", Size = new Size(308, 36), Location = new Point(16, 12), ForeColor = Muted };
-            var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Location = new Point(16, 54), Width = 308, FlatStyle = FlatStyle.Flat, BackColor = Card, ForeColor = Color.White };
+            var l = new Label { Text = "User name or ID to follow (pick one of your accounts or type one). Must be a friend or allow joining.", Size = Z(308, 36), Location = P(16, 12), ForeColor = Muted };
+            var c = new ComboBox { DropDownStyle = ComboBoxStyle.DropDown, Location = P(16, 54), Width = S(308), FlatStyle = FlatStyle.Flat, BackColor = Card, ForeColor = Fg };
             c.Items.AddRange(names.Cast<object>().ToArray());
-            var ok = MakeButton("Join", Accent); ok.SetBounds(224, 94, 100, 32); ok.DialogResult = DialogResult.OK;
+            var ok = MakeButton("Join", true); B(ok, 224, 94, 100, 32); ok.DialogResult = DialogResult.OK;
             f.Controls.AddRange(new Control[] { l, c, ok });
             f.AcceptButton = ok;
             return f.ShowDialog() == DialogResult.OK ? c.Text.Trim() : null;
@@ -1638,7 +2165,7 @@ class MainForm : Form
                 }
                 if (IsDisposed) return;
                 if (pid == 0) { a.Note = "! Roblox did not open"; Store.Log("no new RobloxPlayerBeta for " + a.Name); list.Invalidate(); continue; }
-                a.Pid = pid; a.Note = "open"; opened++; list.Invalidate();
+                a.Pid = pid; a.Opened = DateTime.Now; a.Note = "open"; opened++; list.Invalidate();
                 if (i < sel.Count - 1) await Task.Delay(4000);   // gap between clients: avoids Roblox's rate limit
             }
             Say(opened == sel.Count ? "Done." : "Opened " + opened + " of " + sel.Count + ". Click Open log for the red ones.", opened != sel.Count);
@@ -1680,7 +2207,7 @@ class MainForm : Form
             int pid = a.Pid;
             if (await Task.Run(() => Roblox.CloseClient(pid, "RobloxPlayerBeta"))) closed++;
             if (IsDisposed) return;
-            a.Pid = 0; if (a.Note == "open") a.Note = "";
+            a.Pid = 0; a.Opened = DateTime.MinValue; if (a.Note == "open") a.Note = "";
         }
         list.Invalidate();
         Say("Closed " + closed + " client(s).");
@@ -1690,18 +2217,18 @@ class MainForm : Form
     // Returns the typed password, or null if cancelled. confirm = type it twice (new password).
     static string AskPassword(string title, string label, bool confirm, string error = null)
     {
-        using (var f = new Form { Text = title, ClientSize = new Size(340, confirm ? 228 : 160), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen,
-            MaximizeBox = false, MinimizeBox = false, TopMost = true, BackColor = Bg, ForeColor = Color.White, Font = new Font("Segoe UI", 9.5f), Icon = AppIcon })
+        using (var f = new Form { Text = title, ClientSize = new Size(S(340), S(confirm ? 228 : 160)), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterScreen,
+            MaximizeBox = false, MinimizeBox = false, TopMost = true, BackColor = Bg, ForeColor = Fg, Font = Ui.F("Segoe UI", 9.5f), Icon = AppIcon })
         {
             DarkTitle(f);
-            var l = new Label { Text = label, Size = new Size(308, confirm ? 72 : 36), Location = new Point(16, 12), ForeColor = Muted };
-            var t1 = new TextBox { Location = new Point(16, confirm ? 90 : 54), Width = 308, UseSystemPasswordChar = true, BackColor = Card, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
+            var l = new Label { Text = label, Size = new Size(S(308), S(confirm ? 72 : 36)), Location = P(16, 12), ForeColor = Muted };
+            var t1 = new TextBox { Location = new Point(S(16), S(confirm ? 90 : 54)), Width = S(308), UseSystemPasswordChar = true, BackColor = Card, ForeColor = Fg, BorderStyle = BorderStyle.FixedSingle };
             TextBox t2 = null;
-            if (confirm) t2 = new TextBox { Location = new Point(16, 122), Width = 308, UseSystemPasswordChar = true, BackColor = Card, ForeColor = Color.White, BorderStyle = BorderStyle.FixedSingle };
-            int y = confirm ? 154 : 86;
-            var err = new Label { Text = error ?? (confirm ? "Type it twice. At least 4 characters." : ""), Size = new Size(308, 20), Location = new Point(16, y), ForeColor = error != null ? Red : Muted };
-            var ok = MakeButton("OK", Accent); ok.SetBounds(224, y + 28, 100, 32);
-            var cancel = MakeButton("Cancel", Card); cancel.SetBounds(116, y + 28, 100, 32); cancel.DialogResult = DialogResult.Cancel;
+            if (confirm) t2 = new TextBox { Location = P(16, 122), Width = S(308), UseSystemPasswordChar = true, BackColor = Card, ForeColor = Fg, BorderStyle = BorderStyle.FixedSingle };
+            int y = S(confirm ? 154 : 86);
+            var err = new Label { Text = error ?? (confirm ? "Type it twice. At least 4 characters." : ""), Size = Z(308, 20), Location = new Point(S(16), y), ForeColor = error != null ? Red : Muted };
+            var ok = MakeButton("OK", true); ok.SetBounds(S(224), y + S(28), S(100), S(32));
+            var cancel = MakeButton("Cancel", false); cancel.SetBounds(S(116), y + S(28), S(100), S(32)); cancel.DialogResult = DialogResult.Cancel;
             ok.Click += delegate
             {
                 if (t1.Text.Length == 0) return;
@@ -1758,6 +2285,126 @@ class MainForm : Form
         return false;
     }
 
+    // ---- appearance ----
+    void ApplyTheme()
+    {
+        BackColor = Ui.Border; bar.BackColor = Ui.Bar; body.BackColor = Bg; body.ForeColor = Fg; list.BackColor = Bg;
+        foreach (var l in new[] { clients, gameSub, lbl, btnLog, gameName, msg }) { l.BackColor = Color.Transparent; l.ForeColor = Muted; }
+        gameName.ForeColor = Fg;
+        msg.ForeColor = Ui.Mix(Bg, msgBad ? Red : Muted, msgT);
+        icon.BackColor = Card; place.BackColor = Card; place.ForeColor = Fg; favBox.BackColor = Card; favBox.ForeColor = Fg;
+        editBox.BackColor = Bg; editBox.ForeColor = Fg;
+        foreach (var b in body.Controls.OfType<FxButton>().Concat(bar.Controls.OfType<FxButton>())) Recolor(b);
+        SyncFavUi();
+        Tick();
+        Invalidate(true);
+    }
+
+    void ShowAppearance()
+    {
+        using (var f = new Form { Text = "Appearance", ClientSize = Z(360, 270), FormBorderStyle = FormBorderStyle.FixedDialog, StartPosition = FormStartPosition.CenterParent,
+            MaximizeBox = false, MinimizeBox = false, ShowInTaskbar = false, Font = Ui.F("Segoe UI", 9.5f), Icon = AppIcon })
+        {
+            DarkTitle(f);
+            var lTheme = new Label { Text = "Theme", AutoSize = true, Location = P(16, 14) };
+            var dark = MakeButton("Dark", false); B(dark, 16, 38, 160, 32);
+            var light = MakeButton("Light", false); B(light, 184, 38, 160, 32);
+            var lAcc = new Label { Text = "Accent color", AutoSize = true, Location = P(16, 84) };
+            var swatches = new List<FxButton>();
+            for (int i = 0; i < Ui.AccentNames.Length; i++)
+            {
+                int idx = i;
+                var sw = new FxButton { Radius = S(32), Tag = "swatch", ForeColor = Color.White, Font = Ui.F("Segoe UI Semibold", 10f) };
+                B(sw, 16 + i * 42, 108, 32, 32);
+                sw.Click += delegate { Ui.AccentIndex = idx; Changed(f); };
+                tips.SetToolTip(sw, Ui.AccentNames[i]);
+                swatches.Add(sw);
+            }
+            var cbAnim = new CheckBox { Text = "Animations", AutoSize = true, Location = P(16, 160), Checked = Ui.Animations, FlatStyle = FlatStyle.Flat };
+            var cbMica = new CheckBox { Text = "Mica background (blurred wallpaper)", AutoSize = true, Location = P(16, 188), Checked = Ui.Mica, FlatStyle = FlatStyle.Flat };
+            var close = MakeButton("Close", true); B(close, 244, 224, 100, 32); close.DialogResult = DialogResult.OK;
+            dark.Click += delegate { Ui.Light = false; Changed(f); };
+            light.Click += delegate { Ui.Light = true; Changed(f); };
+            cbAnim.CheckedChanged += delegate { Ui.Animations = cbAnim.Checked; Changed(f); };
+            cbMica.CheckedChanged += delegate { Ui.Mica = cbMica.Checked; Changed(f); };
+            f.Controls.AddRange(new Control[] { lTheme, dark, light, lAcc, cbAnim, cbMica, close });
+            f.Controls.AddRange(swatches.ToArray());
+            f.AcceptButton = close; f.CancelButton = close;
+            f.Tag = (Action)delegate
+            {
+                f.BackColor = Bg; f.ForeColor = Fg;
+                lTheme.ForeColor = lAcc.ForeColor = Muted;
+                cbAnim.ForeColor = cbMica.ForeColor = Fg;
+                dark.Tag = Ui.Light ? null : "accent"; light.Tag = Ui.Light ? "accent" : null;
+                Recolor(dark); Recolor(light); Recolor(close);
+                for (int i = 0; i < swatches.Count; i++) { swatches[i].BackColor = Ui.AccentOf(i); swatches[i].Text = i == Ui.AccentIndex ? "\u2713" : ""; }
+                SetTitleTheme(f);
+                f.Invalidate(true);
+            };
+            ((Action)f.Tag)();
+            f.ShowDialog(this);
+        }
+    }
+
+    void Changed(Form dialog)
+    {
+        Ui.Save(); Ui.Apply();
+        ApplyTheme();
+        var restyle = dialog.Tag as Action;
+        if (restyle != null) restyle();
+    }
+
+    // Window size and position are remembered (settings.txt); a spot that is no longer on any screen is ignored.
+    void RestoreWindow()
+    {
+        string[] p = Store.Setting("window", "").Split(',');
+        int x, y, w, h; float k;
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        if (p.Length < 6 || !int.TryParse(p[0], out x) || !int.TryParse(p[1], out y) || !int.TryParse(p[2], out w) || !int.TryParse(p[3], out h)
+            || !float.TryParse(p[5], System.Globalization.NumberStyles.Float, inv, out k) || k <= 0) return;
+        float f = Ui.K / k;   // the screen scale may have changed since
+        var r = new Rectangle(x, y, Math.Max(MinimumSize.Width, (int)(w * f)), Math.Max(MinimumSize.Height, (int)(h * f)));
+        var grip = new Rectangle(r.X, r.Y, r.Width, S(36));   // the title bar must be reachable
+        if (!Screen.AllScreens.Any(sc => { var i = Rectangle.Intersect(sc.WorkingArea, grip); return i.Width >= S(120) && i.Height >= S(20); })) return;
+        StartPosition = FormStartPosition.Manual;
+        Location = r.Location;
+        bool max = p[4] == "1";
+        Load += delegate   // the size only after the window exists: set earlier, WinForms would take the frame off it (14 px smaller each run)
+        {
+            normalSize = r.Size; Size = r.Size;
+            if (max) WindowState = FormWindowState.Maximized;
+        };
+    }
+
+    void SaveWindow()
+    {
+        bool normal = WindowState == FormWindowState.Normal;
+        var loc = normal ? Location : RestoreBounds.Location;
+        var size = normal ? Size : normalSize;
+        Store.SetSetting("window", string.Join(",", new[] { loc.X.ToString(), loc.Y.ToString(), size.Width.ToString(), size.Height.ToString(),
+            WindowState == FormWindowState.Maximized ? "1" : "0", Ui.K.ToString(System.Globalization.CultureInfo.InvariantCulture) }));
+    }
+
+    // Keyboard shortcuts. The ones for accounts only act while the list has the focus.
+    protected override bool ProcessCmdKey(ref Message m, Keys k)
+    {
+        if (editing == null)
+        {
+            if (k == (Keys.Control | Keys.N)) { AddAccount(); return true; }
+            if (k == (Keys.Control | Keys.T)) { TileClick(); return true; }
+            if (k == Keys.F5) { if (btnPres.Enabled) RefreshPresence(); return true; }
+            if (k == (Keys.Control | Keys.B)) { OpenSelectedInBrowser(); return true; }
+            if (list.Focused)
+            {
+                if (k == Keys.Enter) { PlaySelected(); return true; }
+                if (k == Keys.Delete) { RemoveSelected(); return true; }
+                if (k == Keys.F2) { RenameSelected(); return true; }
+                if (k == (Keys.Control | Keys.A)) { list.BeginUpdate(); for (int i = 0; i < list.Items.Count; i++) list.SetSelected(i, true); list.EndUpdate(); return true; }
+            }
+        }
+        return base.ProcessCmdKey(ref m, k);
+    }
+
     // ---- favorites ----
     void RefreshFavBox()
     {
@@ -1774,7 +2421,8 @@ class MainForm : Form
         favBox.SelectedIndex = idx;   // -1 = none
         syncing = false;
         btnStar.Text = idx >= 0 ? "\u2605" : "\u2606";
-        btnStar.ForeColor = idx >= 0 ? Orange : Color.White;
+        btnStar.ForeColor = idx >= 0 ? Orange : Fg;
+        btnStar.Invalidate();
     }
 
     void ToggleFav()

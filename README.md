@@ -25,7 +25,8 @@
 - **Multi-client:** run several Roblox accounts at the same time, each in its own client.
 - **No stored passwords:** you sign in through your **default browser** (Firefox, Edge, Chrome, Brave or Vivaldi), with the normal captcha and 2FA. The program only keeps the session cookie, **encrypted** for your Windows user.
 - **Launch many at once:** select the accounts and click Play. It opens them one by one, confirms each client actually started, and flags the ones that failed.
-- **Nicknames** for every account: double-click it and type right on the row (Enter saves, Esc cancels).
+- **Nicknames** for every account: double-click it (or press `F2`) and type right on the row (Enter saves, Esc cancels).
+- **Open in browser:** opens roblox.com already signed in as the selected account, in a temporary window of your default browser (your own browser profile is never touched). The temporary profile is deleted when you close that window.
 - **Reorder accounts:** drag and drop, or `Alt`+`↑`/`↓` (moves all selected). The order is saved and also used when tiling windows.
 - **Game by Place ID:** shows the name, icon and live player count. Favorite games with the star ☆ and switch between them in one click.
 - **Follow user:** join the server of a friend or of another account of yours.
@@ -37,7 +38,11 @@
 - **Close one client:** right-click an account and choose **Close client** to shut down just that account's Roblox.
 - **Password lock (optional):** ask for a password when the program opens. **Lock now** in the tray menu hides the window until the password is typed again. Set it from the tray icon menu.
 - **Clear errors and a log:** when something fails, each account says why (expired login, rate limit, locked account, no connection), and an **Open log** button shows the details.
-- **Custom UI:** dark theme, custom title bar, system tray icon.
+- **Open time:** each client MultiRoblox opened shows how long it has been running (`open · 1h 05m`).
+- **Appearance:** dark or light theme, eight accent colors, an optional Mica background (your wallpaper, blurred and tinted, like Windows 11 apps) and smooth animations. All of it is in the gear button on the title bar, and animations and Mica can be turned off.
+- **Keyboard shortcuts:** `Enter` play, `Del` remove, `F2` nickname, `Ctrl`+`A` select all, `Ctrl`+`N` add account, `Ctrl`+`T` tile windows, `Ctrl`+`B` open in browser, `F5` refresh status.
+- **Sharp on any display:** DPI-aware, so it stays crisp at 125 %, 150 % and above. The window remembers its size and position.
+- **Custom UI:** custom title bar with rounded buttons, system tray icon.
 
 ## Installation
 
@@ -61,6 +66,7 @@
 - **No password is stored.** Only each account's `.ROBLOSECURITY` cookie, in `%APPDATA%\MultiRoblox\accounts.dat`, encrypted with the **Windows DPAPI** (only your user, on this PC, can read it).
 - **No telemetry and no server of its own.** The program only talks to `*.roblox.com`, Roblox's image CDN and, for the optional update check, `api.github.com` (no account data is sent; GitHub sees your IP address like in any web request). The cookie is only ever sent to `roblox.com`.
 - Sign-in uses a **temporary, empty browser profile** that is deleted afterwards. Your own browser data, tabs and saved passwords are never touched.
+- **Open in browser** puts the account's cookie into a new temporary browser profile (through the browser's local debugging port) and deletes that profile when the window is closed. While that window is open, the login lives in it like in any signed-in browser.
 - ⚠️ **Anyone who has the cookie can enter the account without the password or 2FA.** Never share `accounts.dat` or the `%APPDATA%\MultiRoblox` folder.
 - The optional **password lock** only locks the program window (it stores a salted PBKDF2 hash in `lock.dat`). It does not encrypt your accounts any further: `accounts.dat` stays protected by the Windows DPAPI. Treat it as protection against casual use of your PC, not against someone who controls your Windows account.
 - All the source code is in this repository: you can read it, build it and compare.
@@ -80,10 +86,11 @@
 - **Multi-client:** Roblox blocks a second client using the `ROBLOX_singletonMutex` and `ROBLOX_singletonEvent` objects. The program holds both Windows objects so the client believes it is the only one. Nothing is injected and no Roblox memory is read.
 - **Sign-in:** opens the default browser (read from the Windows registry) with a temporary profile and a local debugging port. **Chromium** browsers (Edge, Chrome, Brave, Vivaldi) use the Chrome DevTools Protocol; **Firefox** uses WebDriver BiDi. The cookie is read through that channel, validated against `users.roblox.com`, and the browser is closed.
 - **Launching a game:** exchanges the cookie for a one-time *authentication ticket* (`auth.roblox.com`) and opens the `roblox-player:` protocol, the same way the website does.
-- **Storage:** `accounts.dat` = DPAPI (current user scope). Favorites and the last game are plain text (`favs.txt`, `place.txt`). Errors go to `log.txt` (never the cookie).
+- **Storage:** `accounts.dat` = DPAPI (current user scope), saved atomically with the previous version kept as `accounts.dat.bak`. Favorites, the last game and the settings (theme, window position) are plain text (`favs.txt`, `place.txt`, `settings.txt`). Errors go to `log.txt` (never the cookie).
+- **Mica background:** real Windows 11 Mica cannot be used by a WinForms app (its controls would turn see-through), so the program draws the same effect itself: the desktop wallpaper, shrunk to blur it, tinted with the theme color and aligned to the screen.
 - **Windows:** tiling uses `SetWindowPos` with Roblox's DPI awareness, so sizes come out right on scaled displays.
 
-Files in `%APPDATA%\MultiRoblox\`: `accounts.dat`, `favs.txt`, `place.txt`, `log.txt`, the `avatars\` folder (cached profile pictures) and, if you set a password, `lock.dat`. To remove everything, delete the folder.
+Files in `%APPDATA%\MultiRoblox\`: `accounts.dat` (and its backup `accounts.dat.bak`), `favs.txt`, `place.txt`, `settings.txt`, `log.txt`, the `avatars\` folder (cached profile pictures) and, if you set a password, `lock.dat`. To remove everything, delete the folder.
 
 </details>
 
@@ -113,7 +120,7 @@ Command-line options (for development):
 | `--logintest` | opens the default browser with no window and no sign-in and checks the protocol; 0 = ok |
 | `--makeico <file>` | generates the program's `.ico` |
 
-Setting the `MULTIROBLOX_DATA` environment variable to a folder makes the program use that folder instead of `%APPDATA%\MultiRoblox`, which is handy for testing without touching real accounts.
+Setting the `MULTIROBLOX_DATA` environment variable to a folder makes the program use that folder instead of `%APPDATA%\MultiRoblox`, which is handy for testing without touching real accounts (such an instance can run next to your normal one). `MULTIROBLOX_SCALE` (for example `1.5`) pretends another display scale, to check the layout at 150 % on a 100 % screen. `MULTIROBLOX_BROWSER` (a browser `.exe` path) forces the browser used for sign-in and Open in browser.
 
 Layout:
 
@@ -138,7 +145,7 @@ To cut a release:
 
 ## Ideas for the future
 
-Per-account game · start with Windows (minimized) · optional password to open the program · choose the monitor when tiling windows.
+Per-account game · start with Windows (minimized) · choose the monitor when tiling windows · lighter background clients.
 
 ## License
 

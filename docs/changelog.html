@@ -52,7 +52,30 @@
     <div class="wrap">
       <div data-releases>
     <div class="release">
-      <div class="release-head"><h2>v1.2.1</h2><span class="chip on">Latest</span><span class="release-date">Nov 10, 2026</span></div>
+      <div class="release-head"><h2>v1.3.0</h2><span class="chip on">Latest</span><span class="release-date">Nov 11, 2026</span></div>
+      <div class="panel notes">
+        <h4>Added</h4>
+        <ul>
+          <li><strong>Appearance</strong> window (gear button in the title bar, or the tray menu): dark or light theme, eight accent colors, and switches for animations and the Mica background. Changes apply instantly and are remembered.</li>
+          <li>Mica background: the window shows your desktop wallpaper, blurred and tinted with the theme, like Windows 11 apps (works on Windows 10 too). Off by default.</li>
+          <li>Animations: rounded buttons with a soft hover and press, account rows that fade when hovered or selected, a "ping" around the green dot of accounts that are in a game, and status messages that fade in. They can be turned off.</li>
+          <li><strong>Open in browser</strong> (replaces the Nickname button): opens roblox.com signed in as the selected account, in a temporary browser window of your default browser, without touching your own browser profile. The temporary profile, which holds the login, is deleted when that window is closed (leftovers are cleaned up the next time MultiRoblox opens). Also in the right-click menu and on <code>Ctrl</code>+<code>B</code>.</li>
+          <li>Each open client shows how long it has been open (<code>open &middot; 1h 05m</code>).</li>
+          <li>Keyboard shortcuts: <code>Enter</code> plays the selected accounts, <code>Del</code> removes them, <code>F2</code> edits the nickname, <code>Ctrl</code>+<code>A</code> selects all, <code>Ctrl</code>+<code>N</code> adds an account, <code>Ctrl</code>+<code>T</code> tiles the windows, <code>Ctrl</code>+<code>B</code> opens the account in the browser, <code>F5</code> refreshes the online status. Buttons show their shortcut in a tooltip.</li>
+          <li>The window remembers its size and position (and whether it was maximized). A position that is no longer on any screen is ignored.</li>
+          <li>A hint in the empty account list explains how to add the first account.</li>
+        </ul>
+        <h4>Changed</h4>
+        <ul>
+          <li>Sharp at any display scale: MultiRoblox is now DPI-aware, so text and layout are crisp at 125 %, 150 % and above instead of a blurry stretched bitmap.</li>
+          <li>Selected accounts get an accent marker on the left, and the MULTI ON / WAITING badge is rounded.</li>
+          <li>The Nickname button is gone: nicknames are edited with a double-click, <code>F2</code> or the right-click menu.</li>
+          <li>Settings live in <code>settings.txt</code> in the data folder.</li>
+        </ul>
+      </div>
+    </div>
+    <div class="release">
+      <div class="release-head"><h2>v1.2.1</h2><span class="release-date">Nov 10, 2026</span></div>
       <div class="panel notes">
         <h4>Fixed</h4>
         <ul>
